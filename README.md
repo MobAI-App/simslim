@@ -31,7 +31,8 @@ or
 go install github.com/mobai-app/simslim@latest
 ```
 
-macOS only, and you need Xcode's command-line tools, since it drives simulators through `simctl`.
+macOS only, and you need Xcode with an iOS Simulator runtime, since simslim
+drives simulators through `xcrun simctl`.
 
 ## Usage
 
