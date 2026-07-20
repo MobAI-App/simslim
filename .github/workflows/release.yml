@@ -1,0 +1,29 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          go test ./...
+          go build -ldflags "-X main.version=${VERSION}" -o simslim .
+          codesign --force --sign - simslim
+          tar -czf "simslim-${GITHUB_REF_NAME}-macos-arm64.tar.gz" simslim
+          shasum -a 256 "simslim-${GITHUB_REF_NAME}-macos-arm64.tar.gz"
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: simslim-*-macos-arm64.tar.gz
