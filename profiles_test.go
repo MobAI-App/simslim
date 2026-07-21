@@ -119,6 +119,22 @@ func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
 	}
 }
 
+func TestCategoryByID(t *testing.T) {
+	for _, c := range Categories {
+		got, ok := categoryByID(c.ID)
+		if !ok {
+			t.Errorf("categoryByID(%q) not found", c.ID)
+			continue
+		}
+		if got.ID != c.ID {
+			t.Errorf("categoryByID(%q) returned category %q", c.ID, got.ID)
+		}
+	}
+	if _, ok := categoryByID("nope"); ok {
+		t.Error("categoryByID(\"nope\") should not resolve an unknown ID")
+	}
+}
+
 func TestDelta(t *testing.T) {
 	managed := map[string]bool{"a": true, "b": true, "c": true}
 	cases := []struct {

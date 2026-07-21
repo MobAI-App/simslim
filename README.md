@@ -59,6 +59,7 @@ service or disk changes so the copy can serve as a backup.
 ```sh
 simslim list             # simulators and their slim status
 simslim profiles         # what a slim boot turns off
+simslim profiles <id>    # the daemons in one category
 simslim on <udid>        # slim a simulator and reboot it slim
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # how slim a booted simulator is
