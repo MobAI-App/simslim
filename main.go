@@ -127,7 +127,7 @@ func cmdList(ctx context.Context, args []string) error {
 				summary.Memory = &measured
 			}
 			summary.MemoryError = memoryErrors[d.UDID]
-			if st, err := statusForDevice(ctx, d); err == nil {
+			if st, _, err := statusForDevice(ctx, d); err == nil {
 				tag = fmt.Sprintf("booted · %d/%d slim", st.ManagedDisabled, managed)
 				disabled := st.ManagedDisabled
 				summary.ManagedDisabled = &disabled
@@ -173,11 +173,16 @@ func cmdStatus(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	udid, err := oneUDID(args)
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	showDropped := fs.Bool("dropped", false, "list the disabled daemons grouped by category")
+	if err := parseInterspersedFlags(fs, args); err != nil {
+		return err
+	}
+	udid, err := oneUDID(fs.Args())
 	if err != nil {
 		return err
 	}
-	st, err := status(ctx, udid)
+	st, disabled, err := status(ctx, udid)
 	if err != nil {
 		return err
 	}
@@ -188,10 +193,25 @@ func cmdStatus(ctx context.Context, args []string) error {
 	case st.ManagedDisabled > 0:
 		verdict = "partially slim"
 	}
+	var dropped []DroppedCategory
+	if *showDropped {
+		dropped = droppedCategories(disabled)
+	}
 	if jsonOutput {
-		return writeJSON(StatusOutput{Status: st, Verdict: verdict})
+		return writeJSON(StatusOutput{Status: st, Verdict: verdict, Dropped: dropped})
 	}
 	fmt.Printf("%s: %d/%d managed daemons disabled (%s)\n", udid, st.ManagedDisabled, st.ManagedTotal, verdict)
+	if *showDropped {
+		if len(dropped) == 0 {
+			fmt.Println("  Nothing dropped; every managed daemon is enabled.")
+		}
+		for _, c := range dropped {
+			fmt.Printf("  %-14s %s — %s\n", c.ID, c.Name, c.Downside)
+			for _, l := range c.Labels {
+				fmt.Printf("    %s\n", l)
+			}
+		}
+	}
 	return nil
 }
 
@@ -746,6 +766,7 @@ COMMANDS
       --preserve-boot-state
                        Return an initially shutdown simulator to shutdown
   status <udid>        Report how slim a booted simulator is
+      --dropped        Also list the disabled daemons grouped by category
   measure <udid>       Report a booted simulator's memory footprint
   size <udid>          Report a simulator's allocated disk footprint
   disk-categories      Show cleanup and protected system-asset categories

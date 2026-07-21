@@ -20,7 +20,17 @@ type DeviceSummary struct {
 
 type StatusOutput struct {
 	Status
-	Verdict string `json:"verdict"`
+	Verdict string            `json:"verdict"`
+	Dropped []DroppedCategory `json:"dropped,omitempty"` // only when `status --dropped` is requested
+}
+
+// DroppedCategory lists the managed daemons a category has disabled on a
+// simulator, alongside the feature that stops working as a result.
+type DroppedCategory struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Downside string   `json:"downside"`
+	Labels   []string `json:"labels"`
 }
 
 // SimulatorMutationOutput is returned by simulator-management commands so the

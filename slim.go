@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 // reporter receives human-readable progress lines. A nil reporter is a no-op,
@@ -70,28 +71,50 @@ type Status struct {
 	Booted          bool `json:"booted"`
 }
 
-func status(ctx context.Context, udid string) (Status, error) {
+// status reports how slim a device is and returns the labels it currently has
+// disabled (nil when the device is not booted).
+func status(ctx context.Context, udid string) (Status, map[string]bool, error) {
 	d, err := findDevice(ctx, udid)
 	if err != nil {
-		return Status{}, err
+		return Status{}, nil, err
 	}
 	return statusForDevice(ctx, d)
 }
 
-func statusForDevice(ctx context.Context, d Device) (Status, error) {
+func statusForDevice(ctx context.Context, d Device) (Status, map[string]bool, error) {
 	managed := managedSet()
 	st := Status{ManagedTotal: len(managed), Booted: d.State == "Booted"}
 	if !st.Booted {
-		return st, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)
+		return st, nil, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)
 	}
 	disabled, err := readDisabled(ctx, d.UDID)
 	if err != nil {
-		return st, err
+		return st, nil, err
 	}
 	for l := range disabled {
 		if managed[l] {
 			st.ManagedDisabled++
 		}
 	}
-	return st, nil
+	return st, disabled, nil
+}
+
+// droppedCategories groups the disabled managed daemons by category, in category
+// order, omitting categories with nothing disabled.
+func droppedCategories(disabled map[string]bool) []DroppedCategory {
+	var out []DroppedCategory
+	for _, c := range Categories {
+		var labels []string
+		for _, l := range c.Labels {
+			if disabled[l] {
+				labels = append(labels, l)
+			}
+		}
+		if len(labels) == 0 {
+			continue
+		}
+		sort.Strings(labels)
+		out = append(out, DroppedCategory{ID: c.ID, Name: c.Name, Downside: c.Downside, Labels: labels})
+	}
+	return out
 }
