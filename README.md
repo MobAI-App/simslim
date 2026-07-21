@@ -68,6 +68,8 @@ simslim disk-plan <udid> # measure reclaimable data; read-only
 simslim disk-clean --categories caches,logs --confirm <udid>
 simslim clone <udid> <name>
 simslim rename <udid> <name>
+simslim boot <udid>      # boot a simulator and wait for its services
+simslim shutdown <udid>  # shut down a booted simulator
 simslim erase <udid>     # erase apps, data, settings, and slimming overrides
 simslim delete <udid>    # permanently delete a simulator
 ```

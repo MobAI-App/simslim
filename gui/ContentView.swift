@@ -926,6 +926,22 @@ private struct SimulatorRow: View {
         .frame(width: 82, alignment: .leading)
 
         Menu {
+          Section("Power") {
+            if device.isBooted {
+              Button {
+                Task { await model.shutdownSimulator(device) }
+              } label: {
+                Label("Shut Down Simulator", systemImage: "stop.fill")
+              }
+            } else {
+              Button {
+                Task { await model.bootSimulator(device) }
+              } label: {
+                Label("Boot Simulator", systemImage: "play.fill")
+              }
+            }
+          }
+
           Section("Service Profile") {
             Button {
               managementSheet = .slimmingRecommendation([device])

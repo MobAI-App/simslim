@@ -64,6 +64,10 @@ func main() {
 		err = cmdClone(ctx, os.Args[2:])
 	case "rename":
 		err = cmdRename(ctx, os.Args[2:])
+	case "boot":
+		err = cmdBoot(ctx, os.Args[2:])
+	case "shutdown":
+		err = cmdShutdown(ctx, os.Args[2:])
 	case "erase":
 		err = cmdErase(ctx, os.Args[2:])
 	case "delete":
@@ -425,6 +429,89 @@ func cmdDelete(ctx context.Context, args []string) error {
 	return nil
 }
 
+func cmdBoot(ctx context.Context, args []string) error {
+	jsonOutput, args, err := jsonOption(args)
+	if err != nil {
+		return err
+	}
+	udid, err := oneUDID(args)
+	if err != nil {
+		return err
+	}
+
+	// Resolve the exact device first so a simctl alias such as "all" can never
+	// enter the boot path, consistent with erase/delete.
+	device, err := findDevice(ctx, udid)
+	if err != nil {
+		return err
+	}
+	result := SimulatorMutationOutput{Action: "boot", UDID: udid}
+	if device.State == "Booted" {
+		if jsonOutput {
+			return writeJSON(result)
+		}
+		fmt.Printf("Simulator %s is already booted.\n", udid)
+		return nil
+	}
+
+	// Booting and waiting for services can take ~a minute; keep an interactive
+	// caller informed. Suppressed under --json so machine consumers that read a
+	// combined stdout/stderr stream get clean JSON.
+	if !jsonOutput {
+		fmt.Fprintf(os.Stderr, "Booting %s...\n", udid)
+	}
+	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
+	defer cancel()
+	if err := bootAndWait(tctx, udid); err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeJSON(result)
+	}
+	fmt.Printf("Booted %s.\n", udid)
+	return nil
+}
+
+func cmdShutdown(ctx context.Context, args []string) error {
+	jsonOutput, args, err := jsonOption(args)
+	if err != nil {
+		return err
+	}
+	udid, err := oneUDID(args)
+	if err != nil {
+		return err
+	}
+
+	// Resolve the exact device first so a simctl alias such as "all" can never
+	// enter the shutdown path, consistent with erase/delete.
+	device, err := findDevice(ctx, udid)
+	if err != nil {
+		return err
+	}
+	result := SimulatorMutationOutput{Action: "shutdown", UDID: udid}
+	if device.State != "Booted" {
+		if jsonOutput {
+			return writeJSON(result)
+		}
+		fmt.Printf("Simulator %s is already shut down.\n", udid)
+		return nil
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
+	defer cancel()
+	if err := shutdown(tctx, udid); err != nil {
+		return err
+	}
+	if err := waitShutdown(tctx, udid, shutdownTimeout); err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeJSON(result)
+	}
+	fmt.Printf("Shut down %s.\n", udid)
+	return nil
+}
+
 func cmdOn(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("on", flag.ContinueOnError)
 	except := fs.String("except", "", "comma-separated category IDs to leave fully enabled (see `simslim profiles`)")
@@ -670,6 +757,8 @@ COMMANDS
                        Reboot a simulator that was booted before cleanup
   clone <udid> <name>  Clone a simulator, preserving its current boot state
   rename <udid> <name> Rename a simulator
+  boot <udid>          Boot a simulator and wait for its services
+  shutdown <udid>      Shut down a booted simulator
   erase <udid>         Erase a simulator's apps, data, and settings
   delete <udid>        Permanently delete a simulator
       --json           Print machine-readable JSON (also supported by list,

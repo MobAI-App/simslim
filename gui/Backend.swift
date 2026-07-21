@@ -121,6 +121,14 @@ struct SimSlimBackend {
     try await execute(["delete", udid]).text
   }
 
+  func boot(udid: String) async throws -> SimulatorMutationResult {
+    try await decode(SimulatorMutationResult.self, arguments: ["boot", "--json", udid])
+  }
+
+  func shutdown(udid: String) async throws -> SimulatorMutationResult {
+    try await decode(SimulatorMutationResult.self, arguments: ["shutdown", "--json", udid])
+  }
+
   private func decode<T: Decodable>(_ type: T.Type, arguments: [String]) async throws -> T {
     let output = try await execute(arguments)
     do {

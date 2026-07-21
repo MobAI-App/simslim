@@ -368,6 +368,37 @@ final class AppModel: ObservableObject {
     await runManagementBatch(.delete, devices: devices)
   }
 
+  func bootSimulator(_ device: SimulatorDevice) async {
+    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    setOperation("Booting simulator…", for: device.udid)
+    record(.info, "Booting \(device.name)")
+    defer { clearOperation(for: device.udid) }
+
+    do {
+      _ = try await backend.boot(udid: device.udid)
+      record(.success, "Booted \(device.name)")
+      await refresh()
+    } catch {
+      recordFailure("Could not boot \(device.name): \(error.localizedDescription)", present: true)
+    }
+  }
+
+  func shutdownSimulator(_ device: SimulatorDevice) async {
+    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    setOperation("Shutting down simulator…", for: device.udid)
+    record(.info, "Shutting down \(device.name)")
+    defer { clearOperation(for: device.udid) }
+
+    do {
+      _ = try await backend.shutdown(udid: device.udid)
+      record(.success, "Shut down \(device.name)")
+      await refresh()
+    } catch {
+      recordFailure(
+        "Could not shut down \(device.name): \(error.localizedDescription)", present: true)
+    }
+  }
+
   func clearActivity() {
     activity.removeAll()
   }
