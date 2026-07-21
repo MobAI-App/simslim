@@ -4,21 +4,28 @@ import "sort"
 
 // Category groups launchd daemon labels that a slim boot disables together.
 type Category struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	Downside       string   `json:"downside"`
-	ApproxMemoryMB int      `json:"approxMemoryMB"`
-	Labels         []string `json:"labels"`
+	ID                  string                 `json:"id"`
+	Name                string                 `json:"name"`
+	Description         string                 `json:"description"`
+	Downside            string                 `json:"downside"`
+	ApproxMemoryMB      int                    `json:"approxMemoryMB"`
+	Labels              []string               `json:"labels"`
+	ServiceDescriptions map[string]string      `json:"serviceDescriptions"`
+	AlwaysEnabled       []AlwaysEnabledService `json:"alwaysEnabled,omitempty"`
 }
 
-// Categories is the complete allowlist of disable-safe daemons. A label that
-// is not in some category here is never disabled or re-enabled, which is what
-// keeps deadlock-inducing daemons (see forbiddenLabels in profiles_test.go)
-// permanently out of reach. ApproxMemoryMB is the rounded median increase in
-// phys_footprint when only that category is kept on versus a fully slim iOS
-// 26.5 clean boot. The estimates vary by runtime and workload and are not
-// additive.
+// AlwaysEnabledService is shown alongside a category for transparency but is
+// never included in a slim profile. Earlier versions may have disabled it, so
+// it remains in the mutation allowlist solely to repair that legacy state.
+type AlwaysEnabledService struct {
+	Label  string `json:"label"`
+	Reason string `json:"reason"`
+}
+
+// Categories is the complete allowlist of daemons a profile may disable.
+// ApproxMemoryMB values are rounded median increases in phys_footprint when
+// only that category is kept on versus a fully slim iOS 26.5 clean boot. The
+// estimates vary by runtime and workload and are not additive.
 var Categories = []Category{
 	{
 		ID:             "widgets",
@@ -267,9 +274,8 @@ var Categories = []Category{
 		Name:           "Sharing & Device Connectivity",
 		Description:    "AirDrop, Continuity, CarPlay, Watch, and Find My services.",
 		Downside:       "AirDrop, Continuity, CarPlay, Watch, and Find My connectivity will not work.",
-		ApproxMemoryMB: 85,
+		ApproxMemoryMB: 65,
 		Labels: []string{
-			"com.apple.sharingd",
 			"com.apple.rapportd",
 			"com.apple.companiond",
 			"com.apple.carkitd",
@@ -281,6 +287,12 @@ var Categories = []Category{
 			"com.apple.announced",
 			"com.apple.navd",
 			"com.apple.findmy.findmylocated",
+		},
+		AlwaysEnabled: []AlwaysEnabledService{
+			{
+				Label:  "com.apple.sharingd",
+				Reason: "Required for system share sheets.",
+			},
 		},
 	},
 	{
@@ -337,13 +349,24 @@ func categoryByID(id string) (Category, bool) {
 	return Category{}, false
 }
 
-// managedSet is every label under management: the only labels that may ever be
-// disabled or re-enabled. Everything else on the device is left untouched.
-func managedSet() map[string]bool {
+// slimmableSet is every label a service profile may disable.
+func slimmableSet() map[string]bool {
 	set := make(map[string]bool)
 	for _, c := range Categories {
 		for _, l := range c.Labels {
 			set[l] = true
+		}
+	}
+	return set
+}
+
+// managedSet is the complete mutation allowlist. Most labels are slimmable;
+// required labels may only transition back to enabled for compatibility.
+func managedSet() map[string]bool {
+	set := slimmableSet()
+	for _, category := range Categories {
+		for _, service := range category.AlwaysEnabled {
+			set[service.Label] = true
 		}
 	}
 	return set

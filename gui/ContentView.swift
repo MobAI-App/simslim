@@ -462,6 +462,7 @@ private struct MetricPill: View {
 private struct ProfileSidebar: View {
   @EnvironmentObject private var model: AppModel
   @Binding var mode: SlimmingMode
+  @State private var serviceSearchText = ""
 
   var body: some View {
     VStack(spacing: 0) {
@@ -517,6 +518,26 @@ private struct ProfileSidebar: View {
     }
   }
 
+  private var filteredMemoryCategories: [SlimCategory] {
+    let query = serviceSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return sortedMemoryCategories }
+    return sortedMemoryCategories.filter { category in
+      category.name.localizedCaseInsensitiveContains(query)
+        || category.description.localizedCaseInsensitiveContains(query)
+        || category.downside.localizedCaseInsensitiveContains(query)
+        || category.labels.contains {
+          $0.localizedCaseInsensitiveContains(query)
+        }
+        || category.labels.contains {
+          category.serviceDescription(for: $0).localizedCaseInsensitiveContains(query)
+        }
+        || category.alwaysEnabledServices.contains {
+          $0.label.localizedCaseInsensitiveContains(query)
+            || $0.reason.localizedCaseInsensitiveContains(query)
+        }
+    }
+  }
+
   private var sortedDiskCategories: [DiskCleanupCategory] {
     model.diskCleanupCategories.filter(\.canClean).sorted {
       let left = model.diskCleanupBytes(for: $0.id) ?? 0
@@ -541,7 +562,8 @@ private struct ProfileSidebar: View {
           Button("Full Slim") { model.resetProfile() }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
-            .disabled(model.keptCategoryIDs.isEmpty || model.isBusy)
+            .disabled(
+              (model.keptCategoryIDs.isEmpty && model.keptServiceLabels.isEmpty) || model.isBusy)
         }
         Text(
           "Sorted by estimated idle memory use. Enable categories your tests need; estimates vary and are not additive."
@@ -551,9 +573,23 @@ private struct ProfileSidebar: View {
         .fixedSize(horizontal: false, vertical: true)
       }
 
+      SidebarServiceSearch(text: $serviceSearchText)
+
       VStack(alignment: .leading, spacing: 8) {
-        ForEach(sortedMemoryCategories) { category in
-          CategoryToggle(category: category)
+        ForEach(filteredMemoryCategories) { category in
+          CategoryToggle(
+            category: category,
+            serviceQuery: serviceSearchText
+          )
+        }
+
+        if !serviceSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          && filteredMemoryCategories.isEmpty
+        {
+          Text("No services match \u{201c}\(serviceSearchText)\u{201d}")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 72)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -572,7 +608,7 @@ private struct ProfileSidebar: View {
         Label("\(model.disabledDaemonCount) services will be disabled", systemImage: "circle")
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.green)
-        Text("Deadlock-prone daemons are excluded by the CLI and never touched.")
+        Text("Core workflow and deadlock-prone daemons are never disabled.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -662,6 +698,39 @@ private struct ProfileSidebar: View {
         LegendItem(icon: "circle", label: "Slim")
       }
       .foregroundStyle(.secondary)
+    }
+  }
+}
+
+private struct SidebarServiceSearch: View {
+  @Binding var text: String
+
+  var body: some View {
+    HStack(spacing: 7) {
+      Image(systemName: "magnifyingglass")
+        .foregroundStyle(.secondary)
+
+      TextField("Find a service", text: $text)
+        .textFieldStyle(.plain)
+        .accessibilityLabel("Find a service")
+
+      if !text.isEmpty {
+        Button {
+          text = ""
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Clear service search")
+      }
+    }
+    .padding(.horizontal, 9)
+    .frame(height: 29)
+    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+    .overlay {
+      RoundedRectangle(cornerRadius: 7)
+        .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5)
     }
   }
 }
@@ -786,53 +855,202 @@ private struct LegendItem: View {
 private struct CategoryToggle: View {
   @EnvironmentObject private var model: AppModel
   let category: SlimCategory
+  let serviceQuery: String
+  @State private var isExpanded = false
 
   private var isKeptEnabled: Binding<Bool> {
     Binding(
-      get: { model.keptCategoryIDs.contains(category.id) },
+      get: { model.categoryIsKept(category) },
       set: { model.setCategory(category, keptEnabled: $0) }
     )
   }
 
+  private var showsServices: Bool {
+    isExpanded || !normalizedQuery.isEmpty
+  }
+
+  private var serviceCount: Int {
+    category.labels.count + category.alwaysEnabledServices.count
+  }
+
+  private var normalizedQuery: String {
+    serviceQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var categoryMetadataMatchesQuery: Bool {
+    guard !normalizedQuery.isEmpty else { return false }
+    return category.name.localizedCaseInsensitiveContains(normalizedQuery)
+      || category.description.localizedCaseInsensitiveContains(normalizedQuery)
+      || category.downside.localizedCaseInsensitiveContains(normalizedQuery)
+  }
+
+  private var visibleLabels: [String] {
+    guard !normalizedQuery.isEmpty, !categoryMetadataMatchesQuery else { return category.labels }
+    return category.labels.filter {
+      $0.localizedCaseInsensitiveContains(normalizedQuery)
+        || category.serviceDescription(for: $0).localizedCaseInsensitiveContains(normalizedQuery)
+    }
+  }
+
+  private var visibleAlwaysEnabledServices: [AlwaysEnabledService] {
+    guard !normalizedQuery.isEmpty, !categoryMetadataMatchesQuery else {
+      return category.alwaysEnabledServices
+    }
+    return category.alwaysEnabledServices.filter {
+      $0.label.localizedCaseInsensitiveContains(normalizedQuery)
+        || $0.reason.localizedCaseInsensitiveContains(normalizedQuery)
+    }
+  }
+
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 6) {
-          Text(category.name)
-            .font(.subheadline.weight(.medium))
-            .fixedSize(horizontal: false, vertical: true)
-          Text("\(category.labels.count)")
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(.quaternary, in: Capsule())
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .top, spacing: 10) {
+        Button {
+          withAnimation(.easeInOut(duration: 0.16)) {
+            isExpanded.toggle()
+          }
+        } label: {
+          HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: showsServices ? "chevron.down" : "chevron.right")
+              .font(.caption2.weight(.bold))
+              .foregroundStyle(.secondary)
+              .frame(width: 9)
+
+            Text(category.name)
+              .font(.subheadline.weight(.medium))
+              .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(serviceCount)")
+              .font(.caption2.monospacedDigit())
+              .foregroundStyle(.secondary)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(.quaternary, in: Capsule())
+          }
         }
+        .buttonStyle(.plain)
+        .help(showsServices ? "Hide individual services" : "Show individual services")
 
-        Label(category.approximateMemoryText, systemImage: "memorychip")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.blue)
-          .padding(.horizontal, 7)
-          .padding(.vertical, 3)
-          .background(Color.blue.opacity(0.1), in: Capsule())
+        Spacer(minLength: 4)
 
-        (Text("When disabled: ").fontWeight(.semibold) + Text(category.downside))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+        Toggle("Keep \(category.name) enabled", isOn: isKeptEnabled)
+          .labelsHidden()
+          .toggleStyle(.switch)
+          .disabled(model.isBusy)
+          .padding(.top, 1)
+          .help("Keep all controllable services in \(category.name) enabled")
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
 
-      Toggle("Keep \(category.name) enabled", isOn: isKeptEnabled)
-        .labelsHidden()
-        .toggleStyle(.switch)
-        .disabled(model.isBusy)
-        .padding(.top, 1)
+      Label(category.approximateMemoryText, systemImage: "memorychip")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.blue.opacity(0.1), in: Capsule())
+        .help(category.approximateMemoryText)
+
+      (Text("When disabled: ").fontWeight(.semibold) + Text(category.downside))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      if showsServices {
+        Divider()
+
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(visibleLabels, id: \.self) { label in
+            ServiceToggle(label: label, category: category)
+          }
+
+          ForEach(visibleAlwaysEnabledServices) { service in
+            AlwaysEnabledServiceRow(service: service)
+          }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+      }
     }
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
-    .help("Keep \(category.name) enabled (approximately \(category.approxMemoryMB) MB at idle)")
+  }
+}
+
+private struct ServiceToggle: View {
+  @EnvironmentObject private var model: AppModel
+  let label: String
+  let category: SlimCategory
+
+  private var isKeptEnabled: Binding<Bool> {
+    Binding(
+      get: { model.serviceIsKept(label, in: category) },
+      set: { model.setService(label, in: category, keptEnabled: $0) }
+    )
+  }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "gearshape.2")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(width: 15)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(label)
+          .font(.caption.monospaced())
+          .lineLimit(2)
+          .textSelection(.enabled)
+        Text(category.serviceDescription(for: label))
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+      }
+
+      Spacer(minLength: 4)
+
+      Toggle("Keep \(label) enabled", isOn: isKeptEnabled)
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .disabled(model.isBusy)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+  }
+}
+
+private struct AlwaysEnabledServiceRow: View {
+  let service: AlwaysEnabledService
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "lock.fill")
+        .font(.caption)
+        .foregroundStyle(.blue)
+        .frame(width: 15)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(service.label)
+          .font(.caption.monospaced())
+          .lineLimit(2)
+          .textSelection(.enabled)
+        Text(service.reason)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer(minLength: 4)
+
+      Text("Always on")
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.blue.opacity(0.1), in: Capsule())
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    .background(Color.blue.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
   }
 }
 

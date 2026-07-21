@@ -29,10 +29,27 @@ struct SlimCategory: Decodable, Identifiable, Equatable {
   let downside: String
   let approxMemoryMB: Int
   let labels: [String]
+  let serviceDescriptions: [String: String]?
+  let alwaysEnabled: [AlwaysEnabledService]?
+
+  var alwaysEnabledServices: [AlwaysEnabledService] {
+    alwaysEnabled ?? []
+  }
 
   var approximateMemoryText: String {
     "Uses ~\(approxMemoryMB) MB RAM"
   }
+
+  func serviceDescription(for label: String) -> String {
+    serviceDescriptions?[label] ?? "Apple background service."
+  }
+}
+
+struct AlwaysEnabledService: Decodable, Identifiable, Equatable {
+  let label: String
+  let reason: String
+
+  var id: String { label }
 }
 
 struct SimulatorMeasurement: Decodable, Equatable {

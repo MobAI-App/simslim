@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var lastUpdated: Date?
   @Published var selectedUDIDs: Set<String> = []
   @Published var keptCategoryIDs: Set<String> = []
+  @Published var keptServiceLabels: Set<String> = []
   @Published var selectedDiskCleanupCategoryIDs: Set<String> = []
   @Published var preserveBootState = true
   @Published var presentedError: PresentedError?
@@ -46,9 +47,10 @@ final class AppModel: ObservableObject {
   }
 
   var disabledDaemonCount: Int {
-    categories
-      .filter { !keptCategoryIDs.contains($0.id) }
-      .reduce(0) { $0 + $1.labels.count }
+    categories.reduce(0) { count, category in
+      guard !categoryIsKept(category) else { return count }
+      return count + category.labels.filter { !keptServiceLabels.contains($0) }.count
+    }
   }
 
   var bootedCount: Int { devices.filter(\.isBooted).count }
@@ -136,8 +138,12 @@ final class AppModel: ObservableObject {
   }
 
   func slimState(for device: SimulatorDevice) -> ServiceSlimState {
-    let disabled = device.managedDisabled ?? lastKnownDisabled[device.udid]
-    guard let disabled else { return .unknown }
+    let cachedOrLiveDisabled = device.managedDisabled ?? lastKnownDisabled[device.udid]
+    guard let cachedOrLiveDisabled else { return .unknown }
+    // Profile updates can remove a daemon from the slimmable set. Clamp an
+    // older shutdown-state cache to the current total until the device boots
+    // and supplies a fresh live count.
+    let disabled = min(max(cachedOrLiveDisabled, 0), device.managedTotal)
     switch disabled {
     case 0:
       return .stock
@@ -178,13 +184,43 @@ final class AppModel: ObservableObject {
   func setCategory(_ category: SlimCategory, keptEnabled: Bool) {
     if keptEnabled {
       keptCategoryIDs.insert(category.id)
+      keptServiceLabels.subtract(category.labels)
     } else {
       keptCategoryIDs.remove(category.id)
+      keptServiceLabels.subtract(category.labels)
     }
+  }
+
+  func categoryIsKept(_ category: SlimCategory) -> Bool {
+    keptCategoryIDs.contains(category.id)
+      || category.labels.allSatisfy { keptServiceLabels.contains($0) }
+  }
+
+  func serviceIsKept(_ label: String, in category: SlimCategory) -> Bool {
+    categoryIsKept(category) || keptServiceLabels.contains(label)
+  }
+
+  func setService(_ label: String, in category: SlimCategory, keptEnabled: Bool) {
+    guard category.labels.contains(label) else { return }
+
+    if keptEnabled {
+      keptServiceLabels.insert(label)
+      if category.labels.allSatisfy({ keptServiceLabels.contains($0) }) {
+        keptCategoryIDs.insert(category.id)
+        keptServiceLabels.subtract(category.labels)
+      }
+      return
+    }
+
+    if keptCategoryIDs.remove(category.id) != nil {
+      keptServiceLabels.formUnion(category.labels)
+    }
+    keptServiceLabels.remove(label)
   }
 
   func resetProfile() {
     keptCategoryIDs.removeAll()
+    keptServiceLabels.removeAll()
   }
 
   func setDiskCleanupCategory(_ category: DiskCleanupCategory, selected: Bool) {
@@ -554,6 +590,7 @@ final class AppModel: ObservableObject {
       let output = try await backend.slim(
         udid: device.udid,
         exceptCategories: keptCategoryIDs,
+        keepLabels: keptServiceLabels,
         preserveBootState: preserveBootState
       )
       setCachedDisabled(disabledDaemonCount, for: device.udid)
