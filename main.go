@@ -104,7 +104,7 @@ func cmdList(ctx context.Context, args []string) error {
 		}
 		return devices[i].Name < devices[j].Name
 	})
-	managed := len(managedSet())
+	managed := len(slimmableSet())
 	memoryByUDID := map[string]Measurement{}
 	memoryErrors := map[string]string{}
 	if jsonOutput {
@@ -168,7 +168,14 @@ func cmdProfiles(args []string) error {
 		fmt.Printf("               When disabled: %s\n", c.Downside)
 		fmt.Println("\nDaemons:")
 		for _, l := range c.Labels {
-			fmt.Printf("  %s\n", l)
+			if desc := c.ServiceDescriptions[l]; desc != "" {
+				fmt.Printf("  %-44s %s\n", l, desc)
+			} else {
+				fmt.Printf("  %s\n", l)
+			}
+		}
+		for _, service := range c.AlwaysEnabled {
+			fmt.Printf("  %-44s Always on — %s\n", service.Label, service.Reason)
 		}
 		return nil
 	}
@@ -179,9 +186,12 @@ func cmdProfiles(args []string) error {
 		fmt.Printf("%-14s %s\n", c.ID, c.Name)
 		fmt.Printf("               %d daemons · ~%d MB idle footprint when enabled\n", len(c.Labels), c.ApproxMemoryMB)
 		fmt.Printf("               When disabled: %s\n", c.Downside)
+		for _, service := range c.AlwaysEnabled {
+			fmt.Printf("               Always on: %s — %s\n", service.Label, service.Reason)
+		}
 	}
-	fmt.Printf("\n%d daemons across %d categories. Deadlock-prone daemons are excluded and never touched.\n",
-		len(managedSet()), len(Categories))
+	fmt.Printf("\n%d daemons across %d categories. Core workflow and deadlock-prone daemons are never disabled.\n",
+		len(slimmableSet()), len(Categories))
 	fmt.Println("Run `simslim profiles <id>` to list a category's daemons.")
 	fmt.Println("Memory estimates are iOS 26.5 clean-boot measurements; they vary by runtime and workload and are not additive.")
 	return nil

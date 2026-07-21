@@ -82,7 +82,7 @@ func status(ctx context.Context, udid string) (Status, map[string]bool, error) {
 }
 
 func statusForDevice(ctx context.Context, d Device) (Status, map[string]bool, error) {
-	managed := managedSet()
+	managed := slimmableSet()
 	st := Status{ManagedTotal: len(managed), Booted: d.State == "Booted"}
 	if !st.Booted {
 		return st, nil, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)

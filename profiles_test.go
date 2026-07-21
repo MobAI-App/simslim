@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,65 @@ func TestNoDuplicateLabels(t *testing.T) {
 			}
 			seen[l] = c.ID
 		}
+	}
+}
+
+func TestEveryServiceHasShortDescription(t *testing.T) {
+	known := map[string]bool{}
+	for _, category := range Categories {
+		if len(category.ServiceDescriptions) != len(category.Labels) {
+			t.Errorf("category %q has %d labels but %d service descriptions", category.ID, len(category.Labels), len(category.ServiceDescriptions))
+		}
+		for _, label := range category.Labels {
+			known[label] = true
+			description, ok := category.ServiceDescriptions[label]
+			if !ok || strings.TrimSpace(description) == "" {
+				t.Errorf("service %q has no user-facing description", label)
+			}
+			if strings.ContainsAny(description, "\r\n") {
+				t.Errorf("service %q description must stay on one logical line", label)
+			}
+			if len(description) > 90 {
+				t.Errorf("service %q description is too long (%d characters)", label, len(description))
+			}
+		}
+	}
+	for label := range serviceDescriptionByLabel {
+		if !known[label] {
+			t.Errorf("description exists for unmanaged service %q", label)
+		}
+	}
+}
+
+func TestRequiredEnabledLabelsAreNeverSlimmed(t *testing.T) {
+	slimmable := slimmableSet()
+	managed := managedSet()
+	profile := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}
+	desired := profile.desired()
+	for _, category := range Categories {
+		for _, service := range category.AlwaysEnabled {
+			if slimmable[service.Label] || desired[service.Label] {
+				t.Errorf("required daemon %q is included in a slim profile", service.Label)
+			}
+			if !managed[service.Label] {
+				t.Errorf("required daemon %q is missing from the repair allowlist", service.Label)
+			}
+			if service.Reason == "" {
+				t.Errorf("required daemon %q has no user-facing reason", service.Label)
+			}
+		}
+	}
+}
+
+func TestDeltaRepairsRequiredEnabledLabels(t *testing.T) {
+	current := map[string]bool{"com.apple.sharingd": true}
+	desired := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}.desired()
+	toDisable, toEnable := delta(current, desired, managedSet())
+	if len(toDisable) == 0 {
+		t.Fatal("full profile should still disable slimmable labels")
+	}
+	if !reflect.DeepEqual(toEnable, []string{"com.apple.sharingd"}) {
+		t.Errorf("toEnable = %v, want [com.apple.sharingd]", toEnable)
 	}
 }
 
