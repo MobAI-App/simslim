@@ -151,8 +151,26 @@ func cmdProfiles(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(args) != 0 {
-		return fmt.Errorf("profiles takes no arguments")
+	if len(args) > 1 {
+		return fmt.Errorf("profiles takes at most one category ID (see `simslim profiles`)")
+	}
+	if len(args) == 1 {
+		c, ok := categoryByID(args[0])
+		if !ok {
+			return fmt.Errorf("unknown category %q (see `simslim profiles`)", args[0])
+		}
+		if jsonOutput {
+			return writeJSON(c)
+		}
+		fmt.Printf("%-14s %s\n", c.ID, c.Name)
+		fmt.Printf("               %s\n", c.Description)
+		fmt.Printf("               %d daemons · ~%d MB idle footprint when enabled\n", len(c.Labels), c.ApproxMemoryMB)
+		fmt.Printf("               When disabled: %s\n", c.Downside)
+		fmt.Println("\nDaemons:")
+		for _, l := range c.Labels {
+			fmt.Printf("  %s\n", l)
+		}
+		return nil
 	}
 	if jsonOutput {
 		return writeJSON(Categories)
@@ -164,6 +182,7 @@ func cmdProfiles(args []string) error {
 	}
 	fmt.Printf("\n%d daemons across %d categories. Deadlock-prone daemons are excluded and never touched.\n",
 		len(managedSet()), len(Categories))
+	fmt.Println("Run `simslim profiles <id>` to list a category's daemons.")
 	fmt.Println("Memory estimates are iOS 26.5 clean-boot measurements; they vary by runtime and workload and are not additive.")
 	return nil
 }
@@ -756,7 +775,8 @@ USAGE
 
 COMMANDS
   list                 List available simulators and their slim status
-  profiles             Show the daemon categories a slim boot disables
+  profiles [id]        Show the daemon categories a slim boot disables;
+                       pass a category ID to list that category's daemons
   on <udid>            Slim a simulator (persist disables + reboot slim)
       --except ids     Leave these categories enabled (comma-separated)
       --keep labels    Keep these individual daemons running (comma-separated)
