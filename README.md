@@ -39,7 +39,7 @@ drives simulators through `xcrun simctl`.
 The SwiftUI app bundles the CLI and adds:
 
 - Searchable simulator status, disk-size, and live RAM columns.
-- Multi-select service profiles with progress and reversible restore.
+- Searchable service profiles with per-daemon controls and purpose summaries.
 - Read-only disk analysis plus confirmed cleanup of allowlisted data.
 - Clone, rename, erase, delete, and Finder shortcuts.
 
@@ -115,7 +115,7 @@ simslim on <udid> --keep com.apple.apsd
 
 ## How it works
 
-`simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable (the handful that wedge a simulator when turned off are left alone).
+`simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.
 
 This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database. `simslim clone` preserves them, but `erase`, `delete` and recreate, or "Erase All Content and Settings" reset the simulator to stock, so you'll need to run `simslim on` again and its memory will climb back to stock until you do. A simulator created from a new or updated runtime also starts stock. Run `simslim list` to see which simulators are currently slim.
 
@@ -128,7 +128,7 @@ Turning services off is fine for most development, UI automation, and CI, but so
 - Universal links need `swcd` (`web`).
 - The Contacts, Photos, and Calendar pickers can act up without their categories.
 
-`simslim profiles` lists every category, so you can keep the ones your work depends on with `--except`.
+`simslim profiles` lists every category, so you can keep a category with `--except` or individual daemons with `--keep`.
 
 ## Why
 

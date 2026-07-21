@@ -79,12 +79,18 @@ struct SimSlimBackend {
     return try await decode(SimulatorDiskCleanupResult.self, arguments: arguments)
   }
 
-  func slim(udid: String, exceptCategories: Set<String>, preserveBootState: Bool) async throws
-    -> String
-  {
+  func slim(
+    udid: String,
+    exceptCategories: Set<String>,
+    keepLabels: Set<String>,
+    preserveBootState: Bool
+  ) async throws -> String {
     var arguments = ["on"]
     if !exceptCategories.isEmpty {
       arguments.append(contentsOf: ["--except", exceptCategories.sorted().joined(separator: ",")])
+    }
+    if !keepLabels.isEmpty {
+      arguments.append(contentsOf: ["--keep", keepLabels.sorted().joined(separator: ",")])
     }
     if preserveBootState {
       arguments.append("--preserve-boot-state")

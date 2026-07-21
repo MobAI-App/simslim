@@ -38,9 +38,13 @@ subpackages. `main.go` is the CLI entry point: it dispatches `os.Args[1]` to a
 
 **The slimming model (the core idea).** `profiles.go` defines `Categories`, an
 allowlist of launchd daemon labels grouped by user-facing feature (siri, search,
-icloud, …). `managedSet()` is the union of every label in `Categories` — **the
-only labels the tool may ever disable or enable.** Anything not in a category is
-never touched. `slim.go`'s `ensure()` boots the device, reads its currently
+icloud, …). `slimmableSet()` is the union of every label in `Categories`.
+`managedSet()` adds each category's `AlwaysEnabled` compatibility services,
+which simslim may only repair back to enabled; these are **the only labels the
+tool may ever disable or enable.** Anything outside those sets is never touched.
+`service_descriptions.go` supplies the short per-daemon explanations shown by
+the GUI; its coverage and length are enforced in `profiles_test.go`.
+`slim.go`'s `ensure()` boots the device, reads its currently
 disabled labels, computes a `delta` against the desired set, and applies the
 changes with `launchctl disable/enable` run inside the simulator via
 `simctl spawn`. The disables are written as persistent launchd overrides, so a
@@ -72,8 +76,8 @@ The app is a thin front end that shells out to that bundled binary.
   a simulator when disabled. `profiles_test.go` holds a `forbiddenLabels` list and
   asserts none appear in any category; if you add labels, keep that test green.
 - **Only managed labels are ever mutated.** `delta()` is scoped to `managedSet()`
-  on both sides — a non-managed label is neither disabled nor re-enabled even if
-  it is already in the wrong state.
+  on both sides. Compatibility labels are omitted from every desired slim state,
+  so they can only be repaired to enabled.
 - **Destructive/management commands resolve the exact UDID first** (`findDevice` /
   `shutdownIfBooted`) so a `simctl` alias like `all` can never fan out a boot,
   erase, delete, or filesystem path across every simulator.
@@ -93,7 +97,7 @@ The app is a thin front end that shells out to that bundled binary.
   machine-readable JSON goes to **stdout**. Under `--json`, suppress the stderr
   chatter so consumers reading a combined stream still get clean JSON.
 - Memory estimates (`ApproxMemoryMB`) are iOS-26.5 clean-boot medians and are
-  **not additive** — don't sum them or present them as guaranteed savings.
+  **not additive**. Every category must have a positive measured estimate.
 
 ## Git
 

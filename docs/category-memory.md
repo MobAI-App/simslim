@@ -30,10 +30,17 @@ category run's median minus that baseline, rounded to a useful GUI value.
 | Photos & Media Analysis | 57.9 MiB | 60 MB |
 | News, Weather, Maps & Games | 88.1 MiB | 90 MB |
 | Messaging & FaceTime | 60.2 MiB | 60 MB |
-| Sharing & Device Connectivity | 83.6 MiB | 85 MB |
+| Sharing & Device Connectivity | 64.4 MiB | 65 MB |
 | Ads, Diagnostics & Telemetry | 106.0 MiB | 105 MB |
 | Other Background Services | 194.0 MiB | 195 MB |
 
 These deltas are not additive. Services share caches and dependencies, and
 their footprint changes with simulator runtime, boot age, installed apps, and
 active workload.
+
+The connectivity category was remeasured after `sharingd` became always-on to
+preserve system share sheets. Three alternating clean-boot pairs compared the
+remaining 11 daemons after the same 20-second settle. Their median deltas were
+64.4, 46.4, and 73.4 MiB; the median pair gives the 65 MB GUI estimate. Seven of
+those daemons stayed resident at idle and directly totaled about 76.2 MiB. The
+whole-simulator delta is used above for consistency with the other categories.
