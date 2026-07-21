@@ -192,7 +192,6 @@ func cmdProfiles(args []string) error {
 	}
 	fmt.Printf("\n%d daemons across %d categories. Core workflow and deadlock-prone daemons are never disabled.\n",
 		len(slimmableSet()), len(Categories))
-	fmt.Println("Run `simslim profiles <id>` to list a category's daemons.")
 	fmt.Println("Memory estimates are iOS 26.5 clean-boot measurements; they vary by runtime and workload and are not additive.")
 	return nil
 }
