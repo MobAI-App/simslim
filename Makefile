@@ -1,4 +1,9 @@
-.PHONY: app check format test
+.PHONY: app cli check format test
+
+VERSION ?= $(shell git describe --tags --always --dirty)
+
+cli:
+	go build -ldflags "-X main.version=$(VERSION)" -o simslim .
 
 app:
 	./scripts/build-app.sh
