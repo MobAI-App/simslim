@@ -117,6 +117,8 @@ simslim on <udid> --keep com.apple.apsd
 
 `simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable (the handful that wedge a simulator when turned off are left alone).
 
+This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database. `simslim clone` preserves them, but `erase`, `delete` and recreate, or "Erase All Content and Settings" reset the simulator to stock, so you'll need to run `simslim on` again and its memory will climb back to stock until you do. A simulator created from a new or updated runtime also starts stock. Run `simslim list` to see which simulators are currently slim.
+
 ## What you lose
 
 Turning services off is fine for most development, UI automation, and CI, but some features genuinely stop working. The ones worth knowing:
