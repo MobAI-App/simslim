@@ -453,10 +453,11 @@ func cmdOn(ctx context.Context, args []string) error {
 		p.Keep[l] = true
 	}
 
-	fmt.Printf("Slimming %s (disabling %d daemons)…\n", udid, len(p.desired()))
+	fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.desired()))
+	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	changed, operationErr := enableSlim(tctx, udid, p)
+	changed, operationErr := enableSlim(tctx, udid, p, report)
 	if originallyShutdown {
 		shutdownErr := returnToShutdown(ctx, udid)
 		if operationErr != nil && shutdownErr != nil {
@@ -499,10 +500,11 @@ func cmdOff(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Restoring %s to stock…\n", udid)
+	fmt.Fprintf(os.Stderr, "Restoring %s to stock. The simulator will reboot to apply the changes.\n", udid)
+	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	changed, operationErr := disableSlim(tctx, udid)
+	changed, operationErr := disableSlim(tctx, udid, report)
 	if originallyShutdown {
 		shutdownErr := returnToShutdown(ctx, udid)
 		if operationErr != nil && shutdownErr != nil {

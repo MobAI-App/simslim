@@ -265,7 +265,8 @@ func parseDisabled(output string) map[string]bool {
 // "DYLD_ROOT_PATH not set for simulator program". launchctl exits 0 even when it
 // prints the benign "switch to user/foreground" note, so a non-zero exit is a
 // real failure; failures are aggregated rather than aborting the whole profile.
-func applyDelta(ctx context.Context, udid string, toDisable, toEnable []string) error {
+func applyDelta(ctx context.Context, udid string, toDisable, toEnable []string, report reporter) error {
+	total := len(toDisable) + len(toEnable)
 	run := func(action, label string) error {
 		out, err := exec.CommandContext(ctx, "xcrun", "simctl", "spawn", udid,
 			"launchctl", action, "system/"+label).CombinedOutput()
@@ -275,19 +276,27 @@ func applyDelta(ctx context.Context, udid string, toDisable, toEnable []string) 
 		return nil
 	}
 	var failures []string
-	for _, l := range toDisable {
-		if err := run("disable", l); err != nil {
+	done := 0
+	step := func(action, label string) {
+		if err := run(action, label); err != nil {
 			failures = append(failures, err.Error())
+		}
+		done++
+		// One process per label is slow (~30s for a full profile); a periodic
+		// count reassures the caller that it has not hung.
+		if done == total || done%20 == 0 {
+			report.report(fmt.Sprintf("  %d/%d services updated", done, total))
 		}
 	}
+	for _, l := range toDisable {
+		step("disable", l)
+	}
 	for _, l := range toEnable {
-		if err := run("enable", l); err != nil {
-			failures = append(failures, err.Error())
-		}
+		step("enable", l)
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("%d/%d launchctl transitions failed: %s",
-			len(failures), len(toDisable)+len(toEnable), strings.Join(failures, "; "))
+			len(failures), total, strings.Join(failures, "; "))
 	}
 	return nil
 }
