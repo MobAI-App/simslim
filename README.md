@@ -34,6 +34,26 @@ go install github.com/mobai-app/simslim@latest
 macOS only, and you need Xcode with an iOS Simulator runtime, since simslim
 drives simulators through `xcrun simctl`.
 
+## macOS app
+
+The SwiftUI app bundles the CLI and adds:
+
+- Searchable simulator status, disk-size, and live RAM columns.
+- Multi-select service profiles with progress and reversible restore.
+- Read-only disk analysis plus confirmed cleanup of allowlisted data.
+- Clone, rename, erase, delete, and Finder shortcuts.
+
+Build it locally with Go and Xcode:
+
+```sh
+make app
+open build/SimSlim.app
+```
+
+Memory estimates are guidance rather than additive savings; see the
+[measurement method](docs/category-memory.md). SimSlim recommends cloning before
+service or disk changes so the copy can serve as a backup.
+
 ## Usage
 
 ```sh
@@ -43,7 +63,41 @@ simslim on <udid>        # slim a simulator and reboot it slim
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # how slim a booted simulator is
 simslim measure <udid>   # a booted simulator's memory footprint
+simslim size <udid>      # total allocated simulator size
+simslim disk-plan <udid> # measure reclaimable data; read-only
+simslim disk-clean --categories caches,logs --confirm <udid>
+simslim clone <udid> <name>
+simslim rename <udid> <name>
+simslim erase <udid>     # erase apps, data, settings, and slimming overrides
+simslim delete <udid>    # permanently delete a simulator
 ```
+
+Read-only and simulator-management commands accept `--json` for integrations
+and the macOS app.
+
+## Disk cleanup
+
+Disk cleanup is permanent and separate from service slimming. `disk-plan` is
+read-only. `disk-clean` shuts down the exact simulator, clears only allowlisted
+per-device directories, and refuses to run without `--confirm`.
+
+```sh
+simslim disk-categories
+simslim disk-plan <udid>
+simslim disk-clean --categories caches,logs,temporary --confirm <udid>
+# Optional: also remove on-demand language models
+simslim disk-clean --categories linguistic-data --confirm <udid>
+```
+
+Built-in apps and core OS language resources are part of a signed iOS runtime
+shared by every simulator using that version, so simslim never modifies them.
+Required Siri assets are measured only because iOS restores them on launch;
+on-demand language data is opt-in and may download again when needed.
+
+`disk-plan` also reports a read-only storage breakdown for installed app bundles,
+Documents, app data, and user media. Those durable rows are never eligible for
+cleanup. See the [disk cleanup safety model](docs/disk-cleanup.md) for recovery
+behavior, safeguards, and Xcode 26.6 validation results.
 
 Keep a category you actually need, like Spotlight search:
 
