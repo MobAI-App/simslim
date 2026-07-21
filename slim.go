@@ -46,9 +46,9 @@ func disableSlim(ctx context.Context, udid string) (bool, error) {
 
 // Status describes how slim a device currently is.
 type Status struct {
-	ManagedDisabled int // managed labels currently disabled
-	ManagedTotal    int // size of the managed universe
-	Booted          bool
+	ManagedDisabled int  `json:"managedDisabled"` // managed labels currently disabled
+	ManagedTotal    int  `json:"managedTotal"`    // size of the managed universe
+	Booted          bool `json:"booted"`
 }
 
 func status(ctx context.Context, udid string) (Status, error) {
@@ -56,12 +56,16 @@ func status(ctx context.Context, udid string) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	return statusForDevice(ctx, d)
+}
+
+func statusForDevice(ctx context.Context, d Device) (Status, error) {
 	managed := managedSet()
 	st := Status{ManagedTotal: len(managed), Booted: d.State == "Booted"}
 	if !st.Booted {
 		return st, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)
 	}
-	disabled, err := readDisabled(ctx, udid)
+	disabled, err := readDisabled(ctx, d.UDID)
 	if err != nil {
 		return st, err
 	}

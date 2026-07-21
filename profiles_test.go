@@ -48,6 +48,17 @@ func TestNoDuplicateLabels(t *testing.T) {
 	}
 }
 
+func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
+	for _, c := range Categories {
+		if c.Downside == "" {
+			t.Errorf("category %q has no downside description", c.ID)
+		}
+		if c.ApproxMemoryMB <= 0 {
+			t.Errorf("category %q has invalid approximate memory %d MB", c.ID, c.ApproxMemoryMB)
+		}
+	}
+}
+
 func TestDelta(t *testing.T) {
 	managed := map[string]bool{"a": true, "b": true, "c": true}
 	cases := []struct {

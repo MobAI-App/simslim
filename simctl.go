@@ -7,14 +7,16 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Device is a simulator as reported by `simctl list`.
 type Device struct {
-	UDID      string
-	Name      string
-	State     string // "Booted" or "Shutdown"
-	OSVersion string
+	UDID      string `json:"udid"`
+	Name      string `json:"name"`
+	State     string `json:"state"` // "Booted" or "Shutdown"
+	OSVersion string `json:"osVersion"`
 }
 
 func xcrun(ctx context.Context, args ...string) ([]byte, error) {
@@ -76,6 +78,122 @@ func findDevice(ctx context.Context, udid string) (Device, error) {
 		}
 	}
 	return Device{}, fmt.Errorf("no simulator with udid %s", udid)
+}
+
+func normalizeSimulatorName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("simulator name cannot be empty")
+	}
+	if utf8.RuneCountInString(name) > 128 {
+		return "", fmt.Errorf("simulator name cannot exceed 128 characters")
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return "", fmt.Errorf("simulator name cannot contain control characters")
+		}
+	}
+	return name, nil
+}
+
+func parseClonedUDID(output []byte) (string, error) {
+	udid := strings.TrimSpace(string(output))
+	if len(udid) != 36 {
+		return "", fmt.Errorf("simctl clone returned an invalid UDID %q", udid)
+	}
+	for i, r := range udid {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if r != '-' {
+				return "", fmt.Errorf("simctl clone returned an invalid UDID %q", udid)
+			}
+			continue
+		}
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return "", fmt.Errorf("simctl clone returned an invalid UDID %q", udid)
+		}
+	}
+	return udid, nil
+}
+
+// shutdownIfBooted resolves an exact device before any destructive command,
+// preventing simctl aliases such as "all" from entering these code paths.
+func shutdownIfBooted(ctx context.Context, udid string) (bool, error) {
+	device, err := findDevice(ctx, udid)
+	if err != nil {
+		return false, err
+	}
+	if device.State != "Booted" {
+		return false, nil
+	}
+	if err := shutdown(ctx, udid); err != nil {
+		return true, err
+	}
+	if err := waitShutdown(ctx, udid, shutdownTimeout); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+// cloneDevice temporarily shuts down a booted source because CoreSimulator can
+// only clone a stable device, then restores the source's original boot state.
+func cloneDevice(ctx context.Context, udid, name string) (newUDID string, err error) {
+	name, err = normalizeSimulatorName(name)
+	if err != nil {
+		return "", err
+	}
+	wasBooted, err := shutdownIfBooted(ctx, udid)
+	if err != nil {
+		return "", err
+	}
+	if wasBooted {
+		defer func() {
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bootTimeout)
+			defer cancel()
+			if restoreErr := bootAndWait(restoreCtx, udid); restoreErr != nil {
+				if err != nil {
+					err = fmt.Errorf("%v; additionally could not restore the source boot state: %w", err, restoreErr)
+				} else if newUDID != "" {
+					err = fmt.Errorf("cloned simulator %s, but could not restore the source boot state: %w", newUDID, restoreErr)
+				} else {
+					err = fmt.Errorf("could not restore the source boot state: %w", restoreErr)
+				}
+			}
+		}()
+	}
+
+	out, err := xcrun(ctx, "simctl", "clone", udid, name)
+	if err != nil {
+		return "", err
+	}
+	return parseClonedUDID(out)
+}
+
+func renameDevice(ctx context.Context, udid, name string) error {
+	if _, err := findDevice(ctx, udid); err != nil {
+		return err
+	}
+	name, err := normalizeSimulatorName(name)
+	if err != nil {
+		return err
+	}
+	_, err = xcrun(ctx, "simctl", "rename", udid, name)
+	return err
+}
+
+func eraseDevice(ctx context.Context, udid string) error {
+	if _, err := shutdownIfBooted(ctx, udid); err != nil {
+		return err
+	}
+	_, err := xcrun(ctx, "simctl", "erase", udid)
+	return err
+}
+
+func deleteDevice(ctx context.Context, udid string) error {
+	if _, err := shutdownIfBooted(ctx, udid); err != nil {
+		return err
+	}
+	_, err := xcrun(ctx, "simctl", "delete", udid)
+	return err
 }
 
 // bootAndWait boots the device (tolerating an already-booted one) and blocks on

@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check
+        run: make check
+      - name: Build app
+        run: VERSION=0.0.0 BUILD_NUMBER="$GITHUB_RUN_NUMBER" make app
+      - name: Verify app
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/SimSlim.app
+          plutil -lint build/SimSlim.app/Contents/Info.plist
+          test "$(plutil -extract CFBundleShortVersionString raw build/SimSlim.app/Contents/Info.plist)" = "0.0.0"
+          test "$(plutil -extract CFBundleVersion raw build/SimSlim.app/Contents/Info.plist)" = "$GITHUB_RUN_NUMBER"
+          test "$(build/SimSlim.app/Contents/Resources/simslim --version)" = "simslim 0.0.0"
