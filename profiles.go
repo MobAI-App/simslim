@@ -4,21 +4,28 @@ import "sort"
 
 // Category groups launchd daemon labels that a slim boot disables together.
 type Category struct {
-	ID          string
-	Name        string
-	Description string
-	Labels      []string
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	Downside       string   `json:"downside"`
+	ApproxMemoryMB int      `json:"approxMemoryMB"`
+	Labels         []string `json:"labels"`
 }
 
 // Categories is the complete allowlist of disable-safe daemons. A label that
 // is not in some category here is never disabled or re-enabled, which is what
 // keeps deadlock-inducing daemons (see forbiddenLabels in profiles_test.go)
-// permanently out of reach.
+// permanently out of reach. ApproxMemoryMB is the rounded median increase in
+// phys_footprint when only that category is kept on versus a fully slim iOS
+// 26.5 clean boot. The estimates vary by runtime and workload and are not
+// additive.
 var Categories = []Category{
 	{
-		ID:          "widgets",
-		Name:        "Widgets & Wallpaper",
-		Description: "Home and lock screen posters, widgets, and Live Activities. Biggest single memory win.",
+		ID:             "widgets",
+		Name:           "Widgets & Wallpaper",
+		Description:    "Home and lock screen posters, widgets, and Live Activities.",
+		Downside:       "Home and Lock Screen widgets, wallpaper posters, and Live Activities stop updating.",
+		ApproxMemoryMB: 675,
 		Labels: []string{
 			"com.apple.PosterBoard",
 			"com.apple.chronod",
@@ -26,9 +33,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "siri",
-		Name:        "Siri & Intelligence",
-		Description: "Siri, Apple Intelligence, speech, and on-device ML model services.",
+		ID:             "siri",
+		Name:           "Siri & Intelligence",
+		Description:    "Siri, Apple Intelligence, speech, and on-device ML model services.",
+		Downside:       "Siri, speech features, and Apple Intelligence services are unavailable.",
+		ApproxMemoryMB: 265,
 		Labels: []string{
 			"com.apple.assistantd",
 			"com.apple.assistant_cdmd",
@@ -62,9 +71,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "search",
-		Name:        "Spotlight & Search",
-		Description: "On-device Spotlight and in-Settings search stop working while these are off.",
+		ID:             "search",
+		Name:           "Spotlight & Search",
+		Description:    "On-device Spotlight and in-Settings search services.",
+		Downside:       "Spotlight and Settings search return no results.",
+		ApproxMemoryMB: 50,
 		Labels: []string{
 			"com.apple.searchd",
 			"com.apple.searchtoold",
@@ -74,9 +85,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "icloud",
-		Name:        "iCloud & Apple Account",
-		Description: "iCloud sync, Apple Account, keychain, and backup services.",
+		ID:             "icloud",
+		Name:           "iCloud & Apple Account",
+		Description:    "iCloud sync, Apple Account, keychain, and backup services.",
+		Downside:       "iCloud sync, Apple Account, Keychain, and backup workflows will not work.",
+		ApproxMemoryMB: 100,
 		Labels: []string{
 			"com.apple.appleaccountd",
 			"com.apple.appleaccounttransparencyd",
@@ -102,9 +115,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "store",
-		Name:        "App Store, Push & Media",
-		Description: "Remote push testing needs apsd; StoreKit testing needs storekitd.",
+		ID:             "store",
+		Name:           "App Store, Push & Media",
+		Description:    "App Store, push notification, StoreKit, and media services.",
+		Downside:       "Remote push notifications and StoreKit or App Store testing will not work.",
+		ApproxMemoryMB: 80,
 		Labels: []string{
 			"com.apple.appstored",
 			"com.apple.appstorecomponentsd",
@@ -118,9 +133,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "pim",
-		Name:        "Mail, Calendar & Contacts",
-		Description: "Apps that open the contacts or calendar pickers may misbehave without these.",
+		ID:             "pim",
+		Name:           "Mail, Calendar & Contacts",
+		Description:    "Mail, Calendar, Contacts, Reminders, and related sync services.",
+		Downside:       "Contacts, Calendar, Reminders, and Mail-backed pickers or sync may fail.",
+		ApproxMemoryMB: 80,
 		Labels: []string{
 			"com.apple.email.maild",
 			"com.apple.exchangesyncd",
@@ -133,9 +150,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "web",
-		Name:        "Safari Sync & Web Services",
-		Description: "Universal-link (deep link) association needs swcd.",
+		ID:             "web",
+		Name:           "Safari Sync & Web Services",
+		Description:    "Safari sync, web push, privacy, and universal-link services.",
+		Downside:       "Universal links and Safari sync or background web services will not work.",
+		ApproxMemoryMB: 50,
 		Labels: []string{
 			"com.apple.SafariBookmarksSyncAgent",
 			"com.apple.Safari.History",
@@ -150,9 +169,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "family",
-		Name:        "Family & Screen Time",
-		Description: "Family Sharing, Screen Time, and usage tracking.",
+		ID:             "family",
+		Name:           "Family & Screen Time",
+		Description:    "Family Sharing, Screen Time, and usage tracking.",
+		Downside:       "Family Sharing, Screen Time, and usage tracking stop working.",
+		ApproxMemoryMB: 65,
 		Labels: []string{
 			"com.apple.familycircled",
 			"com.apple.FamilyControlsAgent",
@@ -165,9 +186,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "health",
-		Name:        "Health, Home & Fitness",
-		Description: "HealthKit, HomeKit, and Fitness services.",
+		ID:             "health",
+		Name:           "Health, Home & Fitness",
+		Description:    "HealthKit, HomeKit, and Fitness services.",
+		Downside:       "HealthKit, HomeKit, and Fitness integrations will not work.",
+		ApproxMemoryMB: 135,
 		Labels: []string{
 			"com.apple.healthd",
 			"com.apple.healthappd",
@@ -186,9 +209,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "photos",
-		Name:        "Photos & Media Analysis",
-		Description: "Photo picker and Photos-library apps need these.",
+		ID:             "photos",
+		Name:           "Photos & Media Analysis",
+		Description:    "Photos library, photo analysis, and media analysis services.",
+		Downside:       "Photo picker, Photos-library workflows, and media analysis may fail.",
+		ApproxMemoryMB: 60,
 		Labels: []string{
 			"com.apple.photoanalysisd",
 			"com.apple.photosface",
@@ -201,9 +226,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "apps",
-		Name:        "News, Weather, Maps & Games",
-		Description: "Game-controller APIs are affected by disabling these.",
+		ID:             "apps",
+		Name:           "News, Weather, Maps & Games",
+		Description:    "News, Weather, Maps, Tips, and game services.",
+		Downside:       "News, Weather, Maps background data, and game-controller services are unavailable.",
+		ApproxMemoryMB: 90,
 		Labels: []string{
 			"com.apple.newsd",
 			"com.apple.weatherd",
@@ -220,9 +247,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "messaging",
-		Name:        "Messaging & FaceTime",
-		Description: "iMessage, FaceTime, and identity services.",
+		ID:             "messaging",
+		Name:           "Messaging & FaceTime",
+		Description:    "iMessage, FaceTime, call, and identity services.",
+		Downside:       "iMessage, FaceTime, and related identity services will not work.",
+		ApproxMemoryMB: 60,
 		Labels: []string{
 			"com.apple.identityservicesd",
 			"com.apple.ids_simd",
@@ -234,9 +263,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "connectivity",
-		Name:        "Sharing & Device Connectivity",
-		Description: "AirDrop, Continuity, CarPlay, Watch, and Find My connectivity.",
+		ID:             "connectivity",
+		Name:           "Sharing & Device Connectivity",
+		Description:    "AirDrop, Continuity, CarPlay, Watch, and Find My services.",
+		Downside:       "AirDrop, Continuity, CarPlay, Watch, and Find My connectivity will not work.",
+		ApproxMemoryMB: 85,
 		Labels: []string{
 			"com.apple.sharingd",
 			"com.apple.rapportd",
@@ -253,9 +284,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "telemetry",
-		Name:        "Ads, Diagnostics & Telemetry",
-		Description: "The DeviceCheck API needs devicecheckd.",
+		ID:             "telemetry",
+		Name:           "Ads, Diagnostics & Telemetry",
+		Description:    "DeviceCheck, ad privacy, analytics, diagnostics, and feedback services.",
+		Downside:       "DeviceCheck plus analytics, diagnostics, and feedback services are unavailable.",
+		ApproxMemoryMB: 105,
 		Labels: []string{
 			"com.apple.ap.adprivacyd",
 			"com.apple.ap.promotedcontentd",
@@ -271,9 +304,11 @@ var Categories = []Category{
 		},
 	},
 	{
-		ID:          "other",
-		Name:        "Other Background Services",
-		Description: "Wallet, business services, and miscellaneous background daemons.",
+		ID:             "other",
+		Name:           "Other Background Services",
+		Description:    "Wallet, business services, assets, and miscellaneous background daemons.",
+		Downside:       "Wallet, merchant, business, asset, and miscellaneous background services are unavailable.",
+		ApproxMemoryMB: 195,
 		Labels: []string{
 			"com.apple.financed",
 			"com.apple.passd",

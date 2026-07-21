@@ -11,8 +11,8 @@ import (
 
 // Measurement is a device's real memory cost.
 type Measurement struct {
-	Processes int
-	Bytes     int64 // summed phys_footprint (compressed + dirty), the number that caps how many sims fit
+	Processes int   `json:"processes"`
+	Bytes     int64 `json:"bytes"` // summed phys_footprint (compressed + dirty), the number that caps how many sims fit
 }
 
 // measure sums the phys_footprint of every process in the device's launchd tree.
@@ -33,6 +33,50 @@ func measure(ctx context.Context, udid string) (Measurement, error) {
 		return Measurement{}, err
 	}
 
+	return measureTree(root, children, footprint), nil
+}
+
+// measureMany takes one process and footprint snapshot for every requested
+// simulator. This keeps the GUI's RAM column current without running the
+// relatively expensive `top` command once per booted device.
+func measureMany(ctx context.Context, udids []string) (map[string]Measurement, map[string]string) {
+	measurements := make(map[string]Measurement, len(udids))
+	errorsByUDID := make(map[string]string)
+	roots := make(map[string]int, len(udids))
+	for _, udid := range udids {
+		root, err := simLaunchdPID(ctx, udid)
+		if err != nil {
+			errorsByUDID[udid] = err.Error()
+			continue
+		}
+		roots[udid] = root
+	}
+	if len(roots) == 0 {
+		return measurements, errorsByUDID
+	}
+
+	children, err := childMap(ctx)
+	if err != nil {
+		for udid := range roots {
+			errorsByUDID[udid] = err.Error()
+		}
+		return measurements, errorsByUDID
+	}
+	footprint, err := footprintByPID(ctx)
+	if err != nil {
+		for udid := range roots {
+			errorsByUDID[udid] = err.Error()
+		}
+		return measurements, errorsByUDID
+	}
+
+	for udid, root := range roots {
+		measurements[udid] = measureTree(root, children, footprint)
+	}
+	return measurements, errorsByUDID
+}
+
+func measureTree(root int, children map[int][]int, footprint map[int]int64) Measurement {
 	var m Measurement
 	stack := []int{root}
 	seen := map[int]bool{}
@@ -47,7 +91,7 @@ func measure(ctx context.Context, udid string) (Measurement, error) {
 		m.Bytes += footprint[pid]
 		stack = append(stack, children[pid]...)
 	}
-	return m, nil
+	return m
 }
 
 func simLaunchdPID(ctx context.Context, udid string) (int, error) {
