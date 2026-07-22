@@ -110,26 +110,18 @@ func diskCleanupCategoryByID(id string) (DiskCleanupCategory, bool) {
 	return DiskCleanupCategory{}, false
 }
 
+// simulatorDataDirectory returns the device's on-disk data directory, taken
+// straight from the dataPath simctl reports. It is validated as a real directory
+// before the disk commands touch it
+// every deletion is separately confined to it by clearDirectoryContents.
 func simulatorDataDirectory(ctx context.Context, udid string) (Device, string, error) {
-	device, err := findDevice(ctx, udid)
+	device, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return Device{}, "", err
 	}
-	deviceSet := os.Getenv("SIMULATOR_DEVICE_SET_PATH")
-	if deviceSet == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return Device{}, "", fmt.Errorf("find home directory: %w", err)
-		}
-		deviceSet = filepath.Join(home, "Library", "Developer", "CoreSimulator", "Devices")
-	}
-	deviceSet, err = filepath.Abs(deviceSet)
-	if err != nil {
-		return Device{}, "", fmt.Errorf("resolve simulator device set: %w", err)
-	}
-	dataDirectory := filepath.Join(deviceSet, udid, "data")
-	if err := requireDescendant(deviceSet, dataDirectory); err != nil {
-		return Device{}, "", err
+	dataDirectory := device.DataPath
+	if dataDirectory == "" {
+		return Device{}, "", fmt.Errorf("simctl reported no data path for %s", udid)
 	}
 	info, err := os.Lstat(dataDirectory)
 	if err != nil {
@@ -137,9 +129,6 @@ func simulatorDataDirectory(ctx context.Context, udid string) (Device, string, e
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return Device{}, "", fmt.Errorf("simulator data path is not a real directory: %s", dataDirectory)
-	}
-	if err := requireResolvedDescendant(deviceSet, dataDirectory); err != nil {
-		return Device{}, "", err
 	}
 	return device, dataDirectory, nil
 }
@@ -196,7 +185,7 @@ func cleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, pre
 
 	wasBooted := device.State == "Booted"
 	if wasBooted {
-		if _, err := shutdownIfBooted(ctx, udid); err != nil {
+		if _, _, err := shutdownIfBooted(ctx, udid); err != nil {
 			return DiskCleanupResult{}, err
 		}
 	}
@@ -204,7 +193,7 @@ func cleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, pre
 	result, cleanupErr := cleanDiskAt(udid, dataDirectory, categoryIDs)
 	result.WasBooted = wasBooted
 	if wasBooted && preserveBootState {
-		if bootErr := bootAndWait(ctx, udid); bootErr != nil {
+		if bootErr := bootAndWait(ctx, device.Set, udid); bootErr != nil {
 			if cleanupErr != nil {
 				return result, fmt.Errorf("%v; additionally could not restore boot state: %w", cleanupErr, bootErr)
 			}

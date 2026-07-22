@@ -22,12 +22,12 @@ func (r reporter) report(msg string) {
 // actually changes. A running device is required to read/mutate launchctl, so
 // the device is booted first regardless. Each slow phase reports progress so the
 // caller can show the user that a multi-minute reconfigure is still working.
-func ensure(ctx context.Context, udid string, desired map[string]bool, report reporter) (changed bool, err error) {
+func ensure(ctx context.Context, set, udid string, desired map[string]bool, report reporter) (changed bool, err error) {
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
-	if err := bootAndWait(ctx, udid); err != nil {
+	if err := bootAndWait(ctx, set, udid); err != nil {
 		return false, err
 	}
-	current, err := readDisabled(ctx, udid)
+	current, err := readDisabled(ctx, set, udid)
 	if err != nil {
 		return false, err
 	}
@@ -41,27 +41,27 @@ func ensure(ctx context.Context, udid string, desired map[string]bool, report re
 	if len(toEnable) > 0 {
 		report.report(fmt.Sprintf("Re-enabling %d background services...", len(toEnable)))
 	}
-	if err := applyDelta(ctx, udid, toDisable, toEnable, report); err != nil {
+	if err := applyDelta(ctx, set, udid, toDisable, toEnable, report); err != nil {
 		return true, err
 	}
 	report.report("Rebooting the simulator to apply the changes...")
-	if err := shutdown(ctx, udid); err != nil {
+	if err := shutdown(ctx, set, udid); err != nil {
 		return true, fmt.Errorf("shutdown before reboot: %w", err)
 	}
-	if err := waitShutdown(ctx, udid, shutdownTimeout); err != nil {
+	if err := waitShutdown(ctx, set, udid, shutdownTimeout); err != nil {
 		return true, err
 	}
-	return true, bootAndWait(ctx, udid)
+	return true, bootAndWait(ctx, set, udid)
 }
 
 // enableSlim disables the profile's daemons and boots the device slim.
-func enableSlim(ctx context.Context, udid string, p Profile, report reporter) (bool, error) {
-	return ensure(ctx, udid, p.desired(), report)
+func enableSlim(ctx context.Context, set, udid string, p Profile, report reporter) (bool, error) {
+	return ensure(ctx, set, udid, p.desired(), report)
 }
 
 // disableSlim re-enables every managed daemon, returning the device to stock.
-func disableSlim(ctx context.Context, udid string, report reporter) (bool, error) {
-	return ensure(ctx, udid, map[string]bool{}, report)
+func disableSlim(ctx context.Context, set, udid string, report reporter) (bool, error) {
+	return ensure(ctx, set, udid, map[string]bool{}, report)
 }
 
 // Status describes how slim a device currently is.
@@ -74,7 +74,7 @@ type Status struct {
 // status reports how slim a device is and returns the labels it currently has
 // disabled (nil when the device is not booted).
 func status(ctx context.Context, udid string) (Status, map[string]bool, error) {
-	d, err := findDevice(ctx, udid)
+	d, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return Status{}, nil, err
 	}
@@ -87,7 +87,7 @@ func statusForDevice(ctx context.Context, d Device) (Status, map[string]bool, er
 	if !st.Booted {
 		return st, nil, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)
 	}
-	disabled, err := readDisabled(ctx, d.UDID)
+	disabled, err := readDisabled(ctx, d.Set, d.UDID)
 	if err != nil {
 		return st, nil, err
 	}

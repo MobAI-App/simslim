@@ -26,7 +26,16 @@ func main() {
 		os.Exit(2)
 	}
 
-	switch os.Args[1] {
+	args, err := extractDeviceSets(os.Args[1:])
+	if err != nil {
+		fatal(err.Error())
+	}
+	if len(args) == 0 {
+		usage()
+		os.Exit(2)
+	}
+
+	switch args[0] {
 	case "-v", "--version", "version":
 		fmt.Printf("simslim %s\n", version)
 		return
@@ -42,48 +51,89 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "list":
-		err = cmdList(ctx, os.Args[2:])
+		err = cmdList(ctx, args[1:])
 	case "profiles":
-		err = cmdProfiles(os.Args[2:])
+		err = cmdProfiles(args[1:])
 	case "status":
-		err = cmdStatus(ctx, os.Args[2:])
+		err = cmdStatus(ctx, args[1:])
 	case "measure":
-		err = cmdMeasure(ctx, os.Args[2:])
+		err = cmdMeasure(ctx, args[1:])
 	case "size":
-		err = cmdSize(ctx, os.Args[2:])
+		err = cmdSize(ctx, args[1:])
 	case "disk-categories":
-		err = cmdDiskCategories(os.Args[2:])
+		err = cmdDiskCategories(args[1:])
 	case "disk-plan":
-		err = cmdDiskPlan(ctx, os.Args[2:])
+		err = cmdDiskPlan(ctx, args[1:])
 	case "disk-clean":
-		err = cmdDiskClean(ctx, os.Args[2:])
+		err = cmdDiskClean(ctx, args[1:])
 	case "clone":
-		err = cmdClone(ctx, os.Args[2:])
+		err = cmdClone(ctx, args[1:])
 	case "rename":
-		err = cmdRename(ctx, os.Args[2:])
+		err = cmdRename(ctx, args[1:])
 	case "boot":
-		err = cmdBoot(ctx, os.Args[2:])
+		err = cmdBoot(ctx, args[1:])
 	case "shutdown":
-		err = cmdShutdown(ctx, os.Args[2:])
+		err = cmdShutdown(ctx, args[1:])
 	case "erase":
-		err = cmdErase(ctx, os.Args[2:])
+		err = cmdErase(ctx, args[1:])
 	case "delete":
-		err = cmdDelete(ctx, os.Args[2:])
+		err = cmdDelete(ctx, args[1:])
 	case "on":
-		err = cmdOn(ctx, os.Args[2:])
+		err = cmdOn(ctx, args[1:])
 	case "off":
-		err = cmdOff(ctx, os.Args[2:])
+		err = cmdOff(ctx, args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
 		usage()
 		os.Exit(2)
 	}
 	if err != nil {
 		fatal(err.Error())
 	}
+}
+
+// extractDeviceSets pulls the global --set flag (`--set value` or `--set=value`)
+// out of args and returns the remaining arguments, so the subcommand never sees
+// it. Each --set value is a comma-separated list of sets to scan; like the other
+// list flags, a repeated --set is last-wins rather than accumulated. Arguments
+// after a `--` terminator are passed through untouched, so a literal argument is
+// never mistaken for the flag.
+func extractDeviceSets(args []string) ([]string, error) {
+	remaining := make([]string, 0, len(args))
+	value := ""
+	seen := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			remaining = append(remaining, args[i:]...)
+			break
+		}
+		v, isSet := strings.CutPrefix(arg, "--set=")
+		if !isSet {
+			if arg != "--set" {
+				remaining = append(remaining, arg)
+				continue
+			}
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("--set requires a device set name (such as `testing`) or a path")
+			}
+			i++
+			v = args[i]
+		}
+		value, seen = v, true
+	}
+	if seen {
+		sets := splitList(value)
+		if len(sets) == 0 {
+			return nil, fmt.Errorf("--set requires a device set name (such as `testing`) or a path")
+		}
+		for _, set := range sets {
+			registerDeviceSet(set)
+		}
+	}
+	return remaining, nil
 }
 
 func cmdList(ctx context.Context, args []string) error {
@@ -137,7 +187,11 @@ func cmdList(ctx context.Context, args []string) error {
 		}
 		summaries = append(summaries, summary)
 		if !jsonOutput {
-			fmt.Printf("%s  %-22s iOS %-6s %s\n", d.UDID, truncate(d.Name, 22), d.OSVersion, tag)
+			line := fmt.Sprintf("%s  %-22s iOS %-6s %s", d.UDID, truncate(d.Name, 22), d.OSVersion, tag)
+			if d.Set != "" && d.Set != "default" {
+				line += "  (" + d.Set + ")"
+			}
+			fmt.Println(line)
 		}
 	}
 	if jsonOutput {
@@ -489,7 +543,7 @@ func cmdBoot(ctx context.Context, args []string) error {
 
 	// Resolve the exact device first so a simctl alias such as "all" can never
 	// enter the boot path, consistent with erase/delete.
-	device, err := findDevice(ctx, udid)
+	device, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return err
 	}
@@ -510,7 +564,7 @@ func cmdBoot(ctx context.Context, args []string) error {
 	}
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	if err := bootAndWait(tctx, udid); err != nil {
+	if err := bootAndWait(tctx, device.Set, udid); err != nil {
 		return err
 	}
 	if jsonOutput {
@@ -532,7 +586,7 @@ func cmdShutdown(ctx context.Context, args []string) error {
 
 	// Resolve the exact device first so a simctl alias such as "all" can never
 	// enter the shutdown path, consistent with erase/delete.
-	device, err := findDevice(ctx, udid)
+	device, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return err
 	}
@@ -547,10 +601,10 @@ func cmdShutdown(ctx context.Context, args []string) error {
 
 	tctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
-	if err := shutdown(tctx, udid); err != nil {
+	if err := shutdown(tctx, device.Set, udid); err != nil {
 		return err
 	}
-	if err := waitShutdown(tctx, udid, shutdownTimeout); err != nil {
+	if err := waitShutdown(tctx, device.Set, udid, shutdownTimeout); err != nil {
 		return err
 	}
 	if jsonOutput {
@@ -572,10 +626,14 @@ func cmdOn(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown, err := wasShutdown(ctx, udid, *preserveBootState)
+	// Resolve once: this pins the device's set (routing every simctl call below,
+	// including a parallel-testing clone), fails fast on an unknown UDID, and
+	// tells us whether to restore a shutdown state afterward.
+	device, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return err
 	}
+	originallyShutdown := *preserveBootState && device.State == "Shutdown"
 
 	p := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}
 	for _, id := range splitList(*except) {
@@ -592,9 +650,9 @@ func cmdOn(ctx context.Context, args []string) error {
 	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	changed, operationErr := enableSlim(tctx, udid, p, report)
+	changed, operationErr := enableSlim(tctx, device.Set, udid, p, report)
 	if originallyShutdown {
-		shutdownErr := returnToShutdown(ctx, udid)
+		shutdownErr := returnToShutdown(ctx, device.Set, udid)
 		if operationErr != nil && shutdownErr != nil {
 			return fmt.Errorf("%v; additionally could not restore original shutdown state: %w", operationErr, shutdownErr)
 		}
@@ -631,17 +689,18 @@ func cmdOff(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown, err := wasShutdown(ctx, udid, *preserveBootState)
+	device, err := findDevice(ctx, udid, "")
 	if err != nil {
 		return err
 	}
+	originallyShutdown := *preserveBootState && device.State == "Shutdown"
 	fmt.Fprintf(os.Stderr, "Restoring %s to stock. The simulator will reboot to apply the changes.\n", udid)
 	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	changed, operationErr := disableSlim(tctx, udid, report)
+	changed, operationErr := disableSlim(tctx, device.Set, udid, report)
 	if originallyShutdown {
-		shutdownErr := returnToShutdown(ctx, udid)
+		shutdownErr := returnToShutdown(ctx, device.Set, udid)
 		if operationErr != nil && shutdownErr != nil {
 			return fmt.Errorf("%v; additionally could not restore original shutdown state: %w", operationErr, shutdownErr)
 		}
@@ -668,24 +727,13 @@ func cmdOff(ctx context.Context, args []string) error {
 	return nil
 }
 
-func wasShutdown(ctx context.Context, udid string, inspect bool) (bool, error) {
-	if !inspect {
-		return false, nil
-	}
-	d, err := findDevice(ctx, udid)
-	if err != nil {
-		return false, err
-	}
-	return d.State == "Shutdown", nil
-}
-
-func returnToShutdown(ctx context.Context, udid string) error {
+func returnToShutdown(ctx context.Context, set, udid string) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
-	if err := shutdown(shutdownCtx, udid); err != nil {
+	if err := shutdown(shutdownCtx, set, udid); err != nil {
 		return fmt.Errorf("restore original shutdown state: %w", err)
 	}
-	if err := waitShutdown(shutdownCtx, udid, shutdownTimeout); err != nil {
+	if err := waitShutdown(shutdownCtx, set, udid, shutdownTimeout); err != nil {
 		return fmt.Errorf("restore original shutdown state: %w", err)
 	}
 	return nil
@@ -781,6 +829,11 @@ background daemons a simulator does not need.
 
 USAGE
   simslim <command> [args]
+
+GLOBAL OPTIONS
+  --set <name|path>    Also scan these device sets (comma-separated). The default
+                       and Xcode ` + "`testing`" + ` (parallel-testing) sets are always
+                       scanned; use this to add a set at a custom path.
 
 COMMANDS
   list                 List available simulators and their slim status
