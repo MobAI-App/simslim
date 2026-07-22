@@ -13,7 +13,7 @@ the host Mac. macOS-only.
 ## Commands
 
 ```sh
-go build .                      # build the CLI
+go build ./cmd/simslim          # build the CLI
 go test ./...                   # run all tests (Makefile: make test)
 go test -run TestName ./...     # run a single test
 make check                      # full CI gate — must pass before a PR
@@ -32,13 +32,22 @@ runs need Xcode + an iOS runtime.
 
 ## Architecture
 
-Single flat Go package `main` — every `*.go` file sits at the repo root, no
-subpackages. `main.go` is the CLI entry point: it dispatches `os.Args[1]` to a
-`cmd*` function per subcommand and enforces macOS-only up front.
+Two packages. The repo root is `package simslim`, an importable library holding
+every piece of slimming logic and **no external dependencies**. `cmd/simslim/`
+is `package main`, the CLI: `main.go` dispatches `os.Args[1]` to a `cmd*`
+function per subcommand and enforces macOS-only up front.
+
+Anything that talks to a terminal — printing, `--json` encoding via `writeJSON`,
+the interactive wizard in `wizard.go`, `fatal()`, `usage()` — lives in
+`cmd/simslim/`. The library never writes to stdout; it returns values and
+reports progress through the `Reporter` callback the caller supplies.
+
+Exported identifiers in the root package are the public API, so renaming one is
+a breaking change for importers as well as for the CLI.
 
 **The slimming model (the core idea).** `profiles.go` defines `Categories`, an
 allowlist of launchd daemon labels grouped by user-facing feature (siri, search,
-icloud, …). `slimmableSet()` is the union of every label in `Categories`.
+icloud, …). `SlimmableSet()` is the union of every label in `Categories`.
 `managedSet()` adds each category's `AlwaysEnabled` compatibility services,
 which simslim may only repair back to enabled; these are **the only labels the
 tool may ever disable or enable.** Anything outside those sets is never touched.
@@ -46,8 +55,8 @@ tool may ever disable or enable.** Anything outside those sets is never touched.
 the GUI; its coverage and length are enforced in `profiles_test.go`.
 `profile_file.go` loads a committed JSON profile (`simslim on --profile <path>`)
 whose `except`/`keep` arrays mirror the flags of the same name, validates it
-against the allowlist, and resolves it to a `Profile`; it also holds the
-dependency-free `profile` command's wizard that assembles one interactively.
+against the allowlist, and resolves it to a `Profile`. The dependency-free
+`profile` command's interactive wizard lives in `cmd/simslim/wizard.go`.
 `features.go` defines `Features`, a finer-grained catalog than `Categories`:
 each feature (push, storekit, universal-links, …) names just the daemons one
 testable capability needs. `doctor` reads a booted simulator's disabled labels
@@ -97,18 +106,18 @@ The app is a thin front end that shells out to that bundled binary.
 
 ## Conventions
 
-- CLI parsing uses `github.com/urfave/cli/v3` (the project's only dependency). The
-  command tree lives in `app.go` (`newApp`); each subcommand's `Action` is a
-  `cmd*` function in `main.go` that reads flags via `cmd.Bool/String(...)` and
-  positionals via `cmd.Args()`. Flags may appear before or after positional args
+- CLI parsing uses `github.com/urfave/cli/v3` (the CLI's only dependency; the
+  library has none). The command tree lives in `cmd/simslim/app.go` (`newApp`);
+  each subcommand's `Action` is a `cmd*` function in `cmd/simslim/main.go` that
+  reads flags via `cmd.Bool/String(...)` and positionals via `cmd.Args()`. Flags may appear before or after positional args
   (e.g. `simslim on <udid> --except search`) — v3 parses flags anywhere by default.
   `--set` is a global flag (inherited by every subcommand) registered in its flag
   `Action`. `main.go` still owns `version`/`help`/no-args and the macOS-only guard
   before handing off to the tree, and routes every command error through `fatal()`
   for the stable `simslim: <msg>` (exit 1); unknown commands exit 2 with usage.
-- Two timeouts live in `main.go`: `shutdownTimeout` (30s) and `bootTimeout` (6min,
+- Two timeouts live in `simctl.go`: `ShutdownTimeout` (30s) and `BootTimeout` (6min,
   because a first slim reconfigure boots twice).
-- Progress for multi-minute operations goes to **stderr** via the `reporter` type;
+- Progress for multi-minute operations goes to **stderr** via the `Reporter` callback;
   machine-readable JSON goes to **stdout**. Under `--json`, suppress the stderr
   chatter so consumers reading a combined stream still get clean JSON.
 - Memory estimates (`ApproxMemoryMB`) are iOS-26.5 clean-boot medians and are

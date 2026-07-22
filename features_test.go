@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"reflect"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestFeatureLabelsAreSlimmable(t *testing.T) {
-	slimmable := slimmableSet()
+	slimmable := SlimmableSet()
 	for _, f := range Features {
 		if len(f.Labels) == 0 {
 			t.Errorf("feature %q has no labels", f.ID)
@@ -36,26 +36,26 @@ func TestFeatureIDsAreUniqueAndNamed(t *testing.T) {
 }
 
 func TestResolveFeatures(t *testing.T) {
-	got, err := resolveFeatures([]string{"push", "storekit"})
+	got, err := ResolveFeatures([]string{"push", "storekit"})
 	if err != nil {
-		t.Fatalf("resolveFeatures() error = %v", err)
+		t.Fatalf("ResolveFeatures() error = %v", err)
 	}
 	if len(got) != 2 || got[0].ID != "push" || got[1].ID != "storekit" {
 		t.Errorf("resolveFeatures = %v, want [push storekit]", got)
 	}
-	if _, err := resolveFeatures([]string{"push", "nope"}); err == nil {
-		t.Error("resolveFeatures(unknown) error = nil, want error")
+	if _, err := ResolveFeatures([]string{"push", "nope"}); err == nil {
+		t.Error("ResolveFeatures(unknown) error = nil, want error")
 	}
 }
 
 func TestDiagnoseFeatures(t *testing.T) {
-	features, err := resolveFeatures([]string{"push", "storekit", "universal-links"})
+	features, err := ResolveFeatures([]string{"push", "storekit", "universal-links"})
 	if err != nil {
-		t.Fatalf("resolveFeatures() error = %v", err)
+		t.Fatalf("ResolveFeatures() error = %v", err)
 	}
 
 	t.Run("all healthy on a stock device", func(t *testing.T) {
-		report := diagnoseFeatures(features, map[string]bool{})
+		report := DiagnoseFeatures(features, map[string]bool{})
 		if !report.OK {
 			t.Errorf("OK = false, want true for %v", report.Features)
 		}
@@ -63,7 +63,7 @@ func TestDiagnoseFeatures(t *testing.T) {
 
 	t.Run("a disabled daemon breaks its feature", func(t *testing.T) {
 		disabled := map[string]bool{"com.apple.storekitd": true}
-		report := diagnoseFeatures(features, disabled)
+		report := DiagnoseFeatures(features, disabled)
 		if report.OK {
 			t.Error("OK = true, want false when storekitd is disabled")
 		}
@@ -83,8 +83,8 @@ func TestDiagnoseFeatures(t *testing.T) {
 	})
 
 	t.Run("any disabled backing daemon breaks a multi-daemon feature", func(t *testing.T) {
-		spotlight, _ := resolveFeatures([]string{"spotlight"})
-		report := diagnoseFeatures(spotlight, map[string]bool{"com.apple.searchtoold": true})
+		spotlight, _ := ResolveFeatures([]string{"spotlight"})
+		report := DiagnoseFeatures(spotlight, map[string]bool{"com.apple.searchtoold": true})
 		if report.OK {
 			t.Error("spotlight reported OK with searchtoold disabled")
 		}

@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type Measurement struct {
 // phys_footprint (the same value Activity Monitor's "Memory" column reports)
 // counts compressed and swapped pages, so it stays accurate under memory
 // pressure where resident size would read misleadingly low.
-func measure(ctx context.Context, udid string) (Measurement, error) {
+func Measure(ctx context.Context, udid string) (Measurement, error) {
 	root, err := simLaunchdPID(ctx, udid)
 	if err != nil {
 		return Measurement{}, err
@@ -39,7 +39,7 @@ func measure(ctx context.Context, udid string) (Measurement, error) {
 // measureMany takes one process and footprint snapshot for every requested
 // simulator. This keeps the GUI's RAM column current without running the
 // relatively expensive `top` command once per booted device.
-func measureMany(ctx context.Context, udids []string) (map[string]Measurement, map[string]string) {
+func MeasureMany(ctx context.Context, udids []string) (map[string]Measurement, map[string]string) {
 	measurements := make(map[string]Measurement, len(udids))
 	errorsByUDID := make(map[string]string)
 	roots := make(map[string]int, len(udids))

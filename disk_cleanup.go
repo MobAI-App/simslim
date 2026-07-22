@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"context"
@@ -115,7 +115,7 @@ func diskCleanupCategoryByID(id string) (DiskCleanupCategory, bool) {
 // before the disk commands touch it
 // every deletion is separately confined to it by clearDirectoryContents.
 func simulatorDataDirectory(ctx context.Context, udid string) (Device, string, error) {
-	device, err := findDevice(ctx, udid, "")
+	device, err := FindDevice(ctx, udid, "")
 	if err != nil {
 		return Device{}, "", err
 	}
@@ -133,7 +133,7 @@ func simulatorDataDirectory(ctx context.Context, udid string) (Device, string, e
 	return device, dataDirectory, nil
 }
 
-func diskCleanupPlan(ctx context.Context, udid string) (DiskCleanupPlan, error) {
+func PlanDiskCleanup(ctx context.Context, udid string) (DiskCleanupPlan, error) {
 	_, dataDirectory, err := simulatorDataDirectory(ctx, udid)
 	if err != nil {
 		return DiskCleanupPlan{}, err
@@ -173,12 +173,12 @@ func diskCleanupPlanAt(udid, dataDirectory string) (DiskCleanupPlan, error) {
 	return plan, nil
 }
 
-func cleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, preserveBootState bool) (DiskCleanupResult, error) {
+func CleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, preserveBootState bool) (DiskCleanupResult, error) {
 	device, dataDirectory, err := simulatorDataDirectory(ctx, udid)
 	if err != nil {
 		return DiskCleanupResult{}, err
 	}
-	categoryIDs, err = validateDiskCleanupSelection(categoryIDs)
+	categoryIDs, err = ValidateDiskCleanupSelection(categoryIDs)
 	if err != nil {
 		return DiskCleanupResult{}, err
 	}
@@ -193,7 +193,7 @@ func cleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, pre
 	result, cleanupErr := cleanDiskAt(udid, dataDirectory, categoryIDs)
 	result.WasBooted = wasBooted
 	if wasBooted && preserveBootState {
-		if bootErr := bootAndWait(ctx, device.Set, udid); bootErr != nil {
+		if bootErr := BootAndWait(ctx, device.Set, udid); bootErr != nil {
 			if cleanupErr != nil {
 				return result, fmt.Errorf("%v; additionally could not restore boot state: %w", cleanupErr, bootErr)
 			}
@@ -205,7 +205,7 @@ func cleanDeviceDisk(ctx context.Context, udid string, categoryIDs []string, pre
 }
 
 func cleanDiskAt(udid, dataDirectory string, categoryIDs []string) (DiskCleanupResult, error) {
-	categoryIDs, err := validateDiskCleanupSelection(categoryIDs)
+	categoryIDs, err := ValidateDiskCleanupSelection(categoryIDs)
 	if err != nil {
 		return DiskCleanupResult{}, err
 	}
@@ -245,7 +245,7 @@ func cleanDiskAt(udid, dataDirectory string, categoryIDs []string) (DiskCleanupR
 	}, nil
 }
 
-func validateDiskCleanupSelection(ids []string) ([]string, error) {
+func ValidateDiskCleanupSelection(ids []string) ([]string, error) {
 	seen := map[string]bool{}
 	validated := make([]string, 0, len(ids))
 	for _, id := range ids {

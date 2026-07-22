@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"reflect"
@@ -77,10 +77,10 @@ func TestEveryServiceHasShortDescription(t *testing.T) {
 }
 
 func TestRequiredEnabledLabelsAreNeverSlimmed(t *testing.T) {
-	slimmable := slimmableSet()
+	slimmable := SlimmableSet()
 	managed := managedSet()
 	profile := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}
-	desired := profile.desired()
+	desired := profile.Desired()
 	for _, category := range Categories {
 		for _, service := range category.AlwaysEnabled {
 			if slimmable[service.Label] || desired[service.Label] {
@@ -98,7 +98,7 @@ func TestRequiredEnabledLabelsAreNeverSlimmed(t *testing.T) {
 
 func TestDeltaRepairsRequiredEnabledLabels(t *testing.T) {
 	current := map[string]bool{"com.apple.sharingd": true}
-	desired := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}.desired()
+	desired := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}.Desired()
 	toDisable, toEnable := delta(current, desired, managedSet())
 	if len(toDisable) == 0 {
 		t.Fatal("full profile should still disable slimmable labels")
@@ -121,17 +121,17 @@ func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
 
 func TestCategoryByID(t *testing.T) {
 	for _, c := range Categories {
-		got, ok := categoryByID(c.ID)
+		got, ok := CategoryByID(c.ID)
 		if !ok {
-			t.Errorf("categoryByID(%q) not found", c.ID)
+			t.Errorf("CategoryByID(%q) not found", c.ID)
 			continue
 		}
 		if got.ID != c.ID {
-			t.Errorf("categoryByID(%q) returned category %q", c.ID, got.ID)
+			t.Errorf("CategoryByID(%q) returned category %q", c.ID, got.ID)
 		}
 	}
-	if _, ok := categoryByID("nope"); ok {
-		t.Error("categoryByID(\"nope\") should not resolve an unknown ID")
+	if _, ok := CategoryByID("nope"); ok {
+		t.Error("CategoryByID(\"nope\") should not resolve an unknown ID")
 	}
 }
 

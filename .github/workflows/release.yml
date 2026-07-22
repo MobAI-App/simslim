@@ -29,7 +29,7 @@ jobs:
         run: |
           SIMSLIM_VERSION="${SIMSLIM_RELEASE_TAG#v}"
           go test ./...
-          go build -ldflags "-X main.version=${SIMSLIM_VERSION}" -o simslim .
+          go build -ldflags "-X main.version=${SIMSLIM_VERSION}" -o simslim ./cmd/simslim
           codesign --force --sign - simslim
           tar -czf "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz" simslim
           shasum -a 256 "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz"

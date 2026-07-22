@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import "fmt"
 
@@ -50,7 +50,7 @@ func featureByID(id string) (Feature, bool) {
 
 // resolveFeatures maps requested IDs to their Features, erroring on the first
 // unknown one so a typo in --requires fails loudly instead of passing silently.
-func resolveFeatures(ids []string) ([]Feature, error) {
+func ResolveFeatures(ids []string) ([]Feature, error) {
 	out := make([]Feature, 0, len(ids))
 	for _, id := range ids {
 		f, ok := featureByID(id)
@@ -64,7 +64,7 @@ func resolveFeatures(ids []string) ([]Feature, error) {
 
 // diagnoseFeatures reports, for each feature, which of its daemons the device
 // currently has disabled. A feature is OK only when none of them are.
-func diagnoseFeatures(features []Feature, disabled map[string]bool) DoctorOutput {
+func DiagnoseFeatures(features []Feature, disabled map[string]bool) DoctorOutput {
 	statuses := make([]FeatureStatus, 0, len(features))
 	allOK := true
 	for _, f := range features {

@@ -80,7 +80,7 @@ echo "Building bundled simslim CLI ($MACHINE_ARCH)…"
   cd "$ROOT_DIR"
   CGO_ENABLED=0 GOOS=darwin GOARCH="$GO_ARCH" \
     go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
-    -o "$STAGED_APP/Contents/Resources/simslim" .
+    -o "$STAGED_APP/Contents/Resources/simslim" ./cmd/simslim
 )
 
 echo "Building SwiftUI app ($MACHINE_ARCH)…"

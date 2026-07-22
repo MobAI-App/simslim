@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"os"
@@ -197,7 +197,7 @@ func TestDiskCleanupRejectsUnsafeTargetsAndMeasuredOnlyCategory(t *testing.T) {
 	if err := requireDescendant(dataDirectory, root); err == nil {
 		t.Error("requireDescendant should reject a parent directory")
 	}
-	if _, err := validateDiskCleanupSelection([]string{"required-siri-assets"}); err == nil {
+	if _, err := ValidateDiskCleanupSelection([]string{"required-siri-assets"}); err == nil {
 		t.Error("measured-only MobileAsset cleanup must be rejected")
 	}
 }

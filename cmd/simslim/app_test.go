@@ -5,6 +5,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/mobai-app/simslim"
 )
 
 // runApp runs the CLI with stdout/stderr discarded so command output does not
@@ -46,16 +48,13 @@ func TestAppRegistersDeviceSets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extraDeviceSets = nil
-			defer func() { extraDeviceSets = nil }()
+			simslim.ResetDeviceSets()
+			defer simslim.ResetDeviceSets()
 			err := runApp(t, tt.args...)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("Run(%v) error = %v, wantError %v", tt.args, err, tt.wantError)
 			}
-			var gotExtra []string
-			for _, set := range extraDeviceSets {
-				gotExtra = append(gotExtra, set.token)
-			}
+			gotExtra := simslim.ExtraDeviceSetTokens()
 			if !reflect.DeepEqual(gotExtra, tt.wantExtra) {
 				t.Errorf("registered extra sets = %v, want %v", gotExtra, tt.wantExtra)
 			}
@@ -82,8 +81,8 @@ func TestAppFlagParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extraDeviceSets = nil
-			defer func() { extraDeviceSets = nil }()
+			simslim.ResetDeviceSets()
+			defer simslim.ResetDeviceSets()
 			err := runApp(t, tt.args...)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("Run(%v) error = %v, wantError %v", tt.args, err, tt.wantError)

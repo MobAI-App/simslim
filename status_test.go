@@ -1,9 +1,9 @@
-package main
+package simslim
 
 import "testing"
 
 func TestDroppedCategories(t *testing.T) {
-	search, ok := categoryByID("search")
+	search, ok := CategoryByID("search")
 	if !ok {
 		t.Fatal("search category not found")
 	}
@@ -14,7 +14,7 @@ func TestDroppedCategories(t *testing.T) {
 		"com.apple.not-a-managed-d": true,
 	}
 
-	got := droppedCategories(disabled)
+	got := DroppedCategories(disabled)
 
 	byID := map[string]DroppedCategory{}
 	for _, c := range got {
@@ -37,7 +37,7 @@ func TestDroppedCategories(t *testing.T) {
 }
 
 func TestDroppedCategoriesEmpty(t *testing.T) {
-	if got := droppedCategories(map[string]bool{}); len(got) != 0 {
-		t.Errorf("droppedCategories(stock) = %v, want empty", got)
+	if got := DroppedCategories(map[string]bool{}); len(got) != 0 {
+		t.Errorf("DroppedCategories(stock) = %v, want empty", got)
 	}
 }

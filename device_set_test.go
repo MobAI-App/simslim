@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"reflect"
@@ -47,7 +47,7 @@ func TestDeviceSetToken(t *testing.T) {
 func TestRegisterDeviceSetRoutes(t *testing.T) {
 	extraDeviceSets = nil
 	defer func() { extraDeviceSets = nil }()
-	registerDeviceSet("/custom/set")
+	RegisterDeviceSet("/custom/set")
 	// A registered set becomes discoverable like any other.
 	if deviceSetToken("/custom/set") != "/custom/set" {
 		t.Errorf("registered set not resolvable by name")

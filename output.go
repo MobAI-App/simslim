@@ -1,9 +1,4 @@
-package main
-
-import (
-	"encoding/json"
-	"os"
-)
+package simslim
 
 // DeviceSummary is the stable, machine-readable representation used by the
 // macOS app and other integrations. managedDisabled is omitted for shutdown
@@ -59,10 +54,4 @@ type FeatureStatus struct {
 
 type DiskMeasurement struct {
 	Bytes int64 `json:"bytes"`
-}
-
-func writeJSON(value any) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
 }

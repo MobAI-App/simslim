@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"context"
@@ -9,6 +9,12 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+)
+
+// Default timeouts for the simulator operations this package drives.
+const (
+	ShutdownTimeout = 30 * time.Second
+	BootTimeout     = 6 * time.Minute // a first slim reconfigure boots twice
 )
 
 // Device is a simulator as reported by `simctl list`.
@@ -39,13 +45,28 @@ func knownDeviceSets() []deviceSetInfo {
 
 // registerDeviceSet adds a --set value to the scanned sets
 // ignoring any that duplicate an already-known token.
-func registerDeviceSet(value string) {
+func RegisterDeviceSet(value string) {
 	for _, set := range knownDeviceSets() {
 		if set.token == value {
 			return
 		}
 	}
 	extraDeviceSets = append(extraDeviceSets, deviceSetInfo{token: value, name: value})
+}
+
+// ExtraDeviceSetTokens returns the tokens registered with RegisterDeviceSet,
+// beyond the well-known default and testing sets.
+func ExtraDeviceSetTokens() []string {
+	var tokens []string
+	for _, set := range extraDeviceSets {
+		tokens = append(tokens, set.token)
+	}
+	return tokens
+}
+
+// ResetDeviceSets drops every set registered with RegisterDeviceSet.
+func ResetDeviceSets() {
+	extraDeviceSets = nil
 }
 
 func deviceSetToken(name string) string {
@@ -113,7 +134,7 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 
 // The default set is mandatory; a secondary set that cannot be listed (e.g. it
 // does not exist) is skipped rather than failing the whole listing.
-func listDevices(ctx context.Context) ([]Device, error) {
+func ListDevices(ctx context.Context) ([]Device, error) {
 	var devices []Device
 	for _, set := range knownDeviceSets() {
 		found, err := listDevicesInSet(ctx, set)
@@ -139,7 +160,7 @@ func osVersion(runtime string) string {
 
 // findDevice locates a simulator by UDID. An empty set searches every known set.
 // A non-empty set looks only there, so repeated lookups need not rescan.
-func findDevice(ctx context.Context, udid, set string) (Device, error) {
+func FindDevice(ctx context.Context, udid, set string) (Device, error) {
 	for _, s := range knownDeviceSets() {
 		if set != "" && s.name != set {
 			continue
@@ -160,7 +181,7 @@ func findDevice(ctx context.Context, udid, set string) (Device, error) {
 	return Device{}, fmt.Errorf("no simulator with udid %s", udid)
 }
 
-func normalizeSimulatorName(name string) (string, error) {
+func NormalizeSimulatorName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("simulator name cannot be empty")
@@ -199,17 +220,17 @@ func parseClonedUDID(output []byte) (string, error) {
 // preventing simctl aliases such as "all" from entering these code paths. It
 // returns the device's set so the caller can target its own simctl call there.
 func shutdownIfBooted(ctx context.Context, udid string) (set string, wasBooted bool, err error) {
-	device, err := findDevice(ctx, udid, "")
+	device, err := FindDevice(ctx, udid, "")
 	if err != nil {
 		return "", false, err
 	}
 	if device.State != "Booted" {
 		return device.Set, false, nil
 	}
-	if err := shutdown(ctx, device.Set, udid); err != nil {
+	if err := Shutdown(ctx, device.Set, udid); err != nil {
 		return device.Set, true, err
 	}
-	if err := waitShutdown(ctx, device.Set, udid, shutdownTimeout); err != nil {
+	if err := WaitShutdown(ctx, device.Set, udid, ShutdownTimeout); err != nil {
 		return device.Set, true, err
 	}
 	return device.Set, true, nil
@@ -217,8 +238,8 @@ func shutdownIfBooted(ctx context.Context, udid string) (set string, wasBooted b
 
 // cloneDevice temporarily shuts down a booted source because CoreSimulator can
 // only clone a stable device, then restores the source's original boot state.
-func cloneDevice(ctx context.Context, udid, name string) (newUDID string, err error) {
-	name, err = normalizeSimulatorName(name)
+func CloneDevice(ctx context.Context, udid, name string) (newUDID string, err error) {
+	name, err = NormalizeSimulatorName(name)
 	if err != nil {
 		return "", err
 	}
@@ -228,9 +249,9 @@ func cloneDevice(ctx context.Context, udid, name string) (newUDID string, err er
 	}
 	if wasBooted {
 		defer func() {
-			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bootTimeout)
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), BootTimeout)
 			defer cancel()
-			if restoreErr := bootAndWait(restoreCtx, set, udid); restoreErr != nil {
+			if restoreErr := BootAndWait(restoreCtx, set, udid); restoreErr != nil {
 				if err != nil {
 					err = fmt.Errorf("%v; additionally could not restore the source boot state: %w", err, restoreErr)
 				} else if newUDID != "" {
@@ -249,12 +270,12 @@ func cloneDevice(ctx context.Context, udid, name string) (newUDID string, err er
 	return parseClonedUDID(out)
 }
 
-func renameDevice(ctx context.Context, udid, name string) error {
-	device, err := findDevice(ctx, udid, "")
+func RenameDevice(ctx context.Context, udid, name string) error {
+	device, err := FindDevice(ctx, udid, "")
 	if err != nil {
 		return err
 	}
-	name, err = normalizeSimulatorName(name)
+	name, err = NormalizeSimulatorName(name)
 	if err != nil {
 		return err
 	}
@@ -262,7 +283,7 @@ func renameDevice(ctx context.Context, udid, name string) error {
 	return err
 }
 
-func eraseDevice(ctx context.Context, udid string) error {
+func EraseDevice(ctx context.Context, udid string) error {
 	set, _, err := shutdownIfBooted(ctx, udid)
 	if err != nil {
 		return err
@@ -271,7 +292,7 @@ func eraseDevice(ctx context.Context, udid string) error {
 	return err
 }
 
-func deleteDevice(ctx context.Context, udid string) error {
+func DeleteDevice(ctx context.Context, udid string) error {
 	set, _, err := shutdownIfBooted(ctx, udid)
 	if err != nil {
 		return err
@@ -282,7 +303,7 @@ func deleteDevice(ctx context.Context, udid string) error {
 
 // bootAndWait boots the device (tolerating an already-booted one) and blocks on
 // bootstatus until its services are ready.
-func bootAndWait(ctx context.Context, set, udid string) error {
+func BootAndWait(ctx context.Context, set, udid string) error {
 	out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "boot", udid)...).CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -294,7 +315,7 @@ func bootAndWait(ctx context.Context, set, udid string) error {
 	return err
 }
 
-func shutdown(ctx context.Context, set, udid string) error {
+func Shutdown(ctx context.Context, set, udid string) error {
 	out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "shutdown", udid)...).CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(out), "current state: Shutdown") {
@@ -349,7 +370,7 @@ func parseDisabled(output string) map[string]bool {
 // "DYLD_ROOT_PATH not set for simulator program". launchctl exits 0 even when it
 // prints the benign "switch to user/foreground" note, so a non-zero exit is a
 // real failure; failures are aggregated rather than aborting the whole profile.
-func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, report reporter) error {
+func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, report Reporter) error {
 	total := len(toDisable) + len(toEnable)
 	run := func(action, label string) error {
 		out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "spawn", udid,
@@ -385,10 +406,10 @@ func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []str
 	return nil
 }
 
-func waitShutdown(ctx context.Context, set, udid string, timeout time.Duration) error {
+func WaitShutdown(ctx context.Context, set, udid string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		d, err := findDevice(ctx, udid, set)
+		d, err := FindDevice(ctx, udid, set)
 		if err != nil {
 			return err
 		}
