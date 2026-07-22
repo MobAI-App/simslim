@@ -41,6 +41,22 @@ type SimulatorMutationOutput struct {
 	SourceUDID string `json:"sourceUdid,omitempty"`
 }
 
+// DoctorOutput reports whether each required feature survives the device's
+// current slimming. OK is false when any required feature has a disabled daemon.
+type DoctorOutput struct {
+	UDID     string          `json:"udid,omitempty"`
+	OK       bool            `json:"ok"`
+	Features []FeatureStatus `json:"features"`
+}
+
+// FeatureStatus is one feature's verdict: the daemons it needs that are down.
+type FeatureStatus struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	OK       bool     `json:"ok"`
+	Disabled []string `json:"disabled,omitempty"`
+}
+
 type DiskMeasurement struct {
 	Bytes int64 `json:"bytes"`
 }
