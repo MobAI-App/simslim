@@ -24,6 +24,11 @@ func newApp() *cli.Command {
 		{Name: "profiles", Flags: []cli.Flag{jsonFlag()}, Action: cmdProfiles},
 		{Name: "profile", Action: cmdNewProfile},
 		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled daemons grouped by category"}}, Action: cmdStatus},
+		{Name: "doctor", Flags: []cli.Flag{
+			jsonFlag(),
+			&cli.StringFlag{Name: "requires", Usage: "comma-separated feature IDs the simulator must support (see `simslim doctor --list`)"},
+			&cli.BoolFlag{Name: "list", Usage: "list every checkable feature and its backing daemons"},
+		}, Action: cmdDoctor},
 		{Name: "measure", Flags: []cli.Flag{jsonFlag()}, Action: cmdMeasure},
 		{Name: "size", Flags: []cli.Flag{jsonFlag()}, Action: cmdSize},
 		{Name: "disk-categories", Flags: []cli.Flag{jsonFlag()}, Action: cmdDiskCategories},

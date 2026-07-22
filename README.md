@@ -63,6 +63,7 @@ simslim profiles <id>    # the daemons in one category
 simslim on <udid>        # slim a simulator and reboot it slim
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # how slim a booted simulator is
+simslim doctor <udid> --requires push,storekit,universal-links
 simslim measure <udid>   # a booted simulator's memory footprint
 simslim size <udid>      # total allocated simulator size
 simslim disk-plan <udid> # measure reclaimable data; read-only
@@ -142,6 +143,28 @@ To build one interactively, run `simslim profile ci.json`: name it, then use the
 arrow keys and space to tick whole features to keep enabled, or press `→` to open
 a feature and keep individual daemons within it. Point it at a directory to save
 `<name>.json` there, or omit the path to print to stdout.
+
+### Checking a simulator with doctor
+
+Slimming a simulator turns features off on purpose, so a test suite that needs
+one of them wants a fast way to catch a mis-slimmed simulator before it runs.
+`doctor` checks a booted simulator against the features you name and exits
+non-zero if any of them are broken, which makes it a natural CI preflight:
+
+```sh
+simslim doctor <udid> --requires push,storekit,universal-links
+```
+
+```
+<udid>: 2/3 required features OK
+  ok     push
+  ok     universal-links
+  BROKEN storekit — com.apple.storekitd disabled
+```
+
+Feature IDs are finer-grained than the slimming categories: each maps to just
+the daemons that back one capability. Run `simslim doctor --list` to see them
+all. Both the check and the list support `--json`.
 
 ## How it works
 

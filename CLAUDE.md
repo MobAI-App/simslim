@@ -48,6 +48,11 @@ the GUI; its coverage and length are enforced in `profiles_test.go`.
 whose `except`/`keep` arrays mirror the flags of the same name, validates it
 against the allowlist, and resolves it to a `Profile`; it also holds the
 dependency-free `profile` command's wizard that assembles one interactively.
+`features.go` defines `Features`, a finer-grained catalog than `Categories`:
+each feature (push, storekit, universal-links, …) names just the daemons one
+testable capability needs. `doctor` reads a booted simulator's disabled labels
+and reports any required feature whose daemons are down, exiting non-zero — a CI
+preflight. `features_test.go` asserts every feature label is slimmable.
 `slim.go`'s `ensure()` boots the device, reads its currently
 disabled labels, computes a `delta` against the desired set, and applies the
 changes with `launchctl disable/enable` run inside the simulator via

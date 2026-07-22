@@ -259,6 +259,66 @@ func cmdStatus(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func cmdDoctor(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	if cmd.Bool("list") {
+		if cmd.Args().Len() != 0 {
+			return fmt.Errorf("doctor --list takes no arguments")
+		}
+		if jsonOutput {
+			return writeJSON(Features)
+		}
+		for _, f := range Features {
+			fmt.Printf("%-16s %-38s %s\n", f.ID, f.Name, strings.Join(f.Labels, ", "))
+		}
+		return nil
+	}
+
+	udid, err := oneUDID(cmd.Args().Slice())
+	if err != nil {
+		return err
+	}
+	features, err := resolveFeatures(splitList(cmd.String("requires")))
+	if err != nil {
+		return err
+	}
+	if len(features) == 0 {
+		return fmt.Errorf("doctor needs at least one feature via --requires (see `simslim doctor --list`)")
+	}
+
+	_, disabled, err := status(ctx, udid)
+	if err != nil {
+		return err
+	}
+	report := diagnoseFeatures(features, disabled)
+	report.UDID = udid
+
+	if jsonOutput {
+		if err := writeJSON(report); err != nil {
+			return err
+		}
+	} else {
+		broken := 0
+		for _, f := range report.Features {
+			if !f.OK {
+				broken++
+			}
+		}
+		fmt.Printf("%s: %d/%d required features OK\n", udid, len(report.Features)-broken, len(report.Features))
+		for _, f := range report.Features {
+			if f.OK {
+				fmt.Printf("  ok    %s\n", f.ID)
+			} else {
+				fmt.Printf("  BROKEN %s — %s disabled\n", f.ID, strings.Join(f.Disabled, ", "))
+			}
+		}
+	}
+	if !report.OK {
+		os.Exit(1)
+	}
+	return nil
+}
+
 func cmdMeasure(ctx context.Context, cmd *cli.Command) error {
 	jsonOutput := cmd.Bool("json")
 	udid, err := oneUDID(cmd.Args().Slice())
@@ -723,6 +783,10 @@ COMMANDS
                        Return an initially shutdown simulator to shutdown
   status <udid>        Report how slim a booted simulator is
       --dropped        Also list the disabled daemons grouped by category
+  doctor <udid>        Check required features against a booted simulator;
+                       exits non-zero if slimming has broken any of them
+      --requires ids   Comma-separated feature IDs to verify
+      --list           List every checkable feature and its daemons
   measure <udid>       Report a booted simulator's memory footprint
   size <udid>          Report a simulator's allocated disk footprint
   disk-categories      Show cleanup and protected system-asset categories
