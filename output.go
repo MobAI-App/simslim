@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 )
 
@@ -50,23 +49,4 @@ func writeJSON(value any) error {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
-}
-
-// jsonOption removes one optional --json flag while rejecting duplicates.
-// Keeping this independent of flag.FlagSet lets callers put --json before or
-// after a UDID, which is friendlier for programmatic use.
-func jsonOption(args []string) (bool, []string, error) {
-	jsonOutput := false
-	remaining := make([]string, 0, len(args))
-	for _, arg := range args {
-		if arg != "--json" {
-			remaining = append(remaining, arg)
-			continue
-		}
-		if jsonOutput {
-			return false, nil, fmt.Errorf("--json may only be specified once")
-		}
-		jsonOutput = true
-	}
-	return jsonOutput, remaining, nil
 }

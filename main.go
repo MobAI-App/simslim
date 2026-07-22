@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	cli "github.com/urfave/cli/v3"
 )
 
 // version is overwritten at build time via -ldflags "-X main.version=...".
@@ -26,16 +27,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	args, err := extractDeviceSets(os.Args[1:])
-	if err != nil {
-		fatal(err.Error())
-	}
-	if len(args) == 0 {
-		usage()
-		os.Exit(2)
-	}
-
-	switch args[0] {
+	switch os.Args[1] {
 	case "-v", "--version", "version":
 		fmt.Printf("simslim %s\n", version)
 		return
@@ -51,97 +43,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	switch args[0] {
-	case "list":
-		err = cmdList(ctx, args[1:])
-	case "profiles":
-		err = cmdProfiles(args[1:])
-	case "status":
-		err = cmdStatus(ctx, args[1:])
-	case "measure":
-		err = cmdMeasure(ctx, args[1:])
-	case "size":
-		err = cmdSize(ctx, args[1:])
-	case "disk-categories":
-		err = cmdDiskCategories(args[1:])
-	case "disk-plan":
-		err = cmdDiskPlan(ctx, args[1:])
-	case "disk-clean":
-		err = cmdDiskClean(ctx, args[1:])
-	case "clone":
-		err = cmdClone(ctx, args[1:])
-	case "rename":
-		err = cmdRename(ctx, args[1:])
-	case "boot":
-		err = cmdBoot(ctx, args[1:])
-	case "shutdown":
-		err = cmdShutdown(ctx, args[1:])
-	case "erase":
-		err = cmdErase(ctx, args[1:])
-	case "delete":
-		err = cmdDelete(ctx, args[1:])
-	case "on":
-		err = cmdOn(ctx, args[1:])
-	case "off":
-		err = cmdOff(ctx, args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
-		usage()
-		os.Exit(2)
-	}
-	if err != nil {
+	if err := newApp().Run(ctx, os.Args); err != nil {
 		fatal(err.Error())
 	}
 }
 
-// extractDeviceSets pulls the global --set flag (`--set value` or `--set=value`)
-// out of args and returns the remaining arguments, so the subcommand never sees
-// it. Each --set value is a comma-separated list of sets to scan; like the other
-// list flags, a repeated --set is last-wins rather than accumulated. Arguments
-// after a `--` terminator are passed through untouched, so a literal argument is
-// never mistaken for the flag.
-func extractDeviceSets(args []string) ([]string, error) {
-	remaining := make([]string, 0, len(args))
-	value := ""
-	seen := false
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			remaining = append(remaining, args[i:]...)
-			break
-		}
-		v, isSet := strings.CutPrefix(arg, "--set=")
-		if !isSet {
-			if arg != "--set" {
-				remaining = append(remaining, arg)
-				continue
-			}
-			if i+1 >= len(args) {
-				return nil, fmt.Errorf("--set requires a device set name (such as `testing`) or a path")
-			}
-			i++
-			v = args[i]
-		}
-		value, seen = v, true
-	}
-	if seen {
-		sets := splitList(value)
-		if len(sets) == 0 {
-			return nil, fmt.Errorf("--set requires a device set name (such as `testing`) or a path")
-		}
-		for _, set := range sets {
-			registerDeviceSet(set)
-		}
-	}
-	return remaining, nil
-}
-
-func cmdList(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	if len(args) != 0 {
+func cmdList(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	if cmd.Args().Len() != 0 {
 		return fmt.Errorf("list takes no arguments")
 	}
 	devices, err := listDevices(ctx)
@@ -200,11 +109,9 @@ func cmdList(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdProfiles(args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
+func cmdProfiles(_ context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	args := cmd.Args().Slice()
 	if len(args) > 1 {
 		return fmt.Errorf("profiles takes at most one category ID (see `simslim profiles`)")
 	}
@@ -250,17 +157,10 @@ func cmdProfiles(args []string) error {
 	return nil
 }
 
-func cmdStatus(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	fs := flag.NewFlagSet("status", flag.ContinueOnError)
-	showDropped := fs.Bool("dropped", false, "list the disabled daemons grouped by category")
-	if err := parseInterspersedFlags(fs, args); err != nil {
-		return err
-	}
-	udid, err := oneUDID(fs.Args())
+func cmdStatus(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	showDropped := cmd.Bool("dropped")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -276,14 +176,14 @@ func cmdStatus(ctx context.Context, args []string) error {
 		verdict = "partially slim"
 	}
 	var dropped []DroppedCategory
-	if *showDropped {
+	if showDropped {
 		dropped = droppedCategories(disabled)
 	}
 	if jsonOutput {
 		return writeJSON(StatusOutput{Status: st, Verdict: verdict, Dropped: dropped})
 	}
 	fmt.Printf("%s: %d/%d managed daemons disabled (%s)\n", udid, st.ManagedDisabled, st.ManagedTotal, verdict)
-	if *showDropped {
+	if showDropped {
 		if len(dropped) == 0 {
 			fmt.Println("  Nothing dropped; every managed daemon is enabled.")
 		}
@@ -297,12 +197,9 @@ func cmdStatus(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdMeasure(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdMeasure(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -317,12 +214,9 @@ func cmdMeasure(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdSize(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdSize(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -339,12 +233,9 @@ func cmdSize(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdDiskCategories(args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	if len(args) != 0 {
+func cmdDiskCategories(_ context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	if cmd.Args().Len() != 0 {
 		return fmt.Errorf("disk-categories takes no arguments")
 	}
 	if jsonOutput {
@@ -361,12 +252,9 @@ func cmdDiskCategories(args []string) error {
 	return nil
 }
 
-func cmdDiskPlan(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdDiskPlan(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -396,32 +284,22 @@ func cmdDiskPlan(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdDiskClean(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
+func cmdDiskClean(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
-	fs := flag.NewFlagSet("disk-clean", flag.ContinueOnError)
-	categories := fs.String("categories", "", "comma-separated cleanable disk category IDs")
-	confirmed := fs.Bool("confirm", false, "confirm permanent deletion")
-	preserveBootState := fs.Bool("preserve-boot-state", false, "reboot a simulator that was booted before cleanup")
-	if err := parseInterspersedFlags(fs, args); err != nil {
-		return err
-	}
-	udid, err := oneUDID(fs.Args())
-	if err != nil {
-		return err
-	}
-	if !*confirmed {
+	if !cmd.Bool("confirm") {
 		return fmt.Errorf("disk-clean permanently deletes data; pass --confirm after reviewing `simslim disk-plan %s`", udid)
 	}
-	categoryIDs := splitList(*categories)
+	categoryIDs := splitList(cmd.String("categories"))
 	if _, err := validateDiskCleanupSelection(categoryIDs); err != nil {
 		return err
 	}
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
-	result, err := cleanDeviceDisk(tctx, udid, categoryIDs, *preserveBootState)
+	result, err := cleanDeviceDisk(tctx, udid, categoryIDs, cmd.Bool("preserve-boot-state"))
 	if err != nil {
 		return err
 	}
@@ -432,11 +310,9 @@ func cmdDiskClean(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdClone(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
+func cmdClone(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	args := cmd.Args().Slice()
 	if len(args) != 2 {
 		return fmt.Errorf("clone expects a simulator UDID and a new name")
 	}
@@ -459,11 +335,9 @@ func cmdClone(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdRename(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
+func cmdRename(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	args := cmd.Args().Slice()
 	if len(args) != 2 {
 		return fmt.Errorf("rename expects a simulator UDID and a new name")
 	}
@@ -485,12 +359,9 @@ func cmdRename(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdErase(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdErase(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -508,12 +379,9 @@ func cmdErase(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdDelete(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdDelete(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -531,12 +399,9 @@ func cmdDelete(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdBoot(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdBoot(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -574,12 +439,9 @@ func cmdBoot(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdShutdown(ctx context.Context, args []string) error {
-	jsonOutput, args, err := jsonOption(args)
-	if err != nil {
-		return err
-	}
-	udid, err := oneUDID(args)
+func cmdShutdown(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -614,15 +476,9 @@ func cmdShutdown(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdOn(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("on", flag.ContinueOnError)
-	except := fs.String("except", "", "comma-separated category IDs to leave fully enabled (see `simslim profiles`)")
-	keep := fs.String("keep", "", "comma-separated launchd labels to keep running")
-	preserveBootState := fs.Bool("preserve-boot-state", false, "return a shutdown simulator to shutdown after reconfiguration")
-	if err := parseInterspersedFlags(fs, args); err != nil {
-		return err
-	}
-	udid, err := oneUDID(fs.Args())
+func cmdOn(ctx context.Context, cmd *cli.Command) error {
+	preserveBootState := cmd.Bool("preserve-boot-state")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -633,16 +489,16 @@ func cmdOn(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown := *preserveBootState && device.State == "Shutdown"
+	originallyShutdown := preserveBootState && device.State == "Shutdown"
 
 	p := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}
-	for _, id := range splitList(*except) {
+	for _, id := range splitList(cmd.String("except")) {
 		if _, ok := categoryByID(id); !ok {
 			return fmt.Errorf("unknown category %q (see `simslim profiles`)", id)
 		}
 		p.ExceptCategories[id] = true
 	}
-	for _, l := range splitList(*keep) {
+	for _, l := range splitList(cmd.String("keep")) {
 		p.Keep[l] = true
 	}
 
@@ -679,13 +535,9 @@ func cmdOn(ctx context.Context, args []string) error {
 	return nil
 }
 
-func cmdOff(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("off", flag.ContinueOnError)
-	preserveBootState := fs.Bool("preserve-boot-state", false, "return a shutdown simulator to shutdown after reconfiguration")
-	if err := parseInterspersedFlags(fs, args); err != nil {
-		return err
-	}
-	udid, err := oneUDID(fs.Args())
+func cmdOff(ctx context.Context, cmd *cli.Command) error {
+	preserveBootState := cmd.Bool("preserve-boot-state")
+	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
@@ -693,7 +545,7 @@ func cmdOff(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown := *preserveBootState && device.State == "Shutdown"
+	originallyShutdown := preserveBootState && device.State == "Shutdown"
 	fmt.Fprintf(os.Stderr, "Restoring %s to stock. The simulator will reboot to apply the changes.\n", udid)
 	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, bootTimeout)
@@ -744,44 +596,6 @@ func oneUDID(args []string) (string, error) {
 		return "", fmt.Errorf("expected exactly one simulator UDID (see `simslim list`)")
 	}
 	return args[0], nil
-}
-
-// parseInterspersedFlags accepts options before or after positional arguments.
-// The standard flag package stops at the first positional argument, which is
-// surprising for documented forms such as `simslim on <udid> --except search`.
-func parseInterspersedFlags(fs *flag.FlagSet, args []string) error {
-	var optionArgs []string
-	var positionalArgs []string
-	optionsEnabled := true
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if optionsEnabled && arg == "--" {
-			optionsEnabled = false
-			continue
-		}
-		if !optionsEnabled || arg == "-" || !strings.HasPrefix(arg, "-") {
-			positionalArgs = append(positionalArgs, arg)
-			continue
-		}
-
-		optionArgs = append(optionArgs, arg)
-		nameAndValue := strings.TrimLeft(arg, "-")
-		name, _, hasInlineValue := strings.Cut(nameAndValue, "=")
-		registered := fs.Lookup(name)
-		if registered == nil || hasInlineValue {
-			continue
-		}
-		if boolFlag, ok := registered.Value.(interface{ IsBoolFlag() bool }); ok && boolFlag.IsBoolFlag() {
-			continue
-		}
-		if i+1 < len(args) {
-			i++
-			optionArgs = append(optionArgs, args[i])
-		}
-	}
-
-	return fs.Parse(append(optionArgs, positionalArgs...))
 }
 
 func splitList(s string) []string {

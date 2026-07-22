@@ -44,52 +44,6 @@ func TestDeviceSetToken(t *testing.T) {
 	}
 }
 
-func TestExtractDeviceSets(t *testing.T) {
-	tests := []struct {
-		name      string
-		args      []string
-		wantArgs  []string
-		wantExtra []string // tokens registered beyond the well-known sets
-		wantError bool
-	}{
-		{name: "absent", args: []string{"list"}, wantArgs: []string{"list"}},
-		{name: "before command", args: []string{"--set", "/a", "list"}, wantArgs: []string{"list"}, wantExtra: []string{"/a"}},
-		{name: "after positional", args: []string{"on", "UDID", "--set", "/a"}, wantArgs: []string{"on", "UDID"}, wantExtra: []string{"/a"}},
-		{name: "equals form", args: []string{"list", "--set=/a"}, wantArgs: []string{"list"}, wantExtra: []string{"/a"}},
-		{name: "repeat is last-wins", args: []string{"--set", "/a", "--set", "/b", "list"}, wantArgs: []string{"list"}, wantExtra: []string{"/b"}},
-		{name: "comma-separated", args: []string{"--set", "/a,/b", "list"}, wantArgs: []string{"list"}, wantExtra: []string{"/a", "/b"}},
-		{name: "comma trims blanks", args: []string{"--set=/a, ,/b", "list"}, wantArgs: []string{"list"}, wantExtra: []string{"/a", "/b"}},
-		{name: "well-known not duplicated", args: []string{"--set", "testing", "list"}, wantArgs: []string{"list"}, wantExtra: nil},
-		{name: "terminator protects literal", args: []string{"rename", "UDID", "--", "--set"}, wantArgs: []string{"rename", "UDID", "--", "--set"}, wantExtra: nil},
-		{name: "missing value", args: []string{"list", "--set"}, wantError: true},
-		{name: "empty value", args: []string{"--set", "  ", "list"}, wantError: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			extraDeviceSets = nil
-			defer func() { extraDeviceSets = nil }()
-			gotArgs, err := extractDeviceSets(tt.args)
-			if (err != nil) != tt.wantError {
-				t.Fatalf("extractDeviceSets() error = %v, wantError %v", err, tt.wantError)
-			}
-			if tt.wantError {
-				return
-			}
-			if !reflect.DeepEqual(gotArgs, tt.wantArgs) {
-				t.Errorf("extractDeviceSets() args = %v, want %v", gotArgs, tt.wantArgs)
-			}
-			var gotExtra []string
-			for _, set := range extraDeviceSets {
-				gotExtra = append(gotExtra, set.token)
-			}
-			if !reflect.DeepEqual(gotExtra, tt.wantExtra) {
-				t.Errorf("registered extra sets = %v, want %v", gotExtra, tt.wantExtra)
-			}
-		})
-	}
-}
-
 func TestRegisterDeviceSetRoutes(t *testing.T) {
 	extraDeviceSets = nil
 	defer func() { extraDeviceSets = nil }()
