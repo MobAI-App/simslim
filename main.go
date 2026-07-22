@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -154,6 +156,66 @@ func cmdProfiles(_ context.Context, cmd *cli.Command) error {
 	fmt.Printf("\n%d daemons across %d categories. Core workflow and deadlock-prone daemons are never disabled.\n",
 		len(slimmableSet()), len(Categories))
 	fmt.Println("Memory estimates are iOS 26.5 clean-boot measurements; they vary by runtime and workload and are not additive.")
+	return nil
+}
+
+func cmdNewProfile(_ context.Context, cmd *cli.Command) error {
+	args := cmd.Args().Slice()
+	if len(args) > 1 {
+		return fmt.Errorf("profile takes an optional output path")
+	}
+	var dest string
+	if len(args) == 1 {
+		dest = args[0]
+	}
+
+	intoDir := false
+	if dest != "" {
+		if info, err := os.Stat(dest); err == nil {
+			if info.IsDir() {
+				intoDir = true
+			} else {
+				return fmt.Errorf("refusing to overwrite %s", dest)
+			}
+		}
+	}
+	if !stdinIsTerminal() {
+		return fmt.Errorf("profile is interactive; run it in a terminal")
+	}
+
+	sp, err := runProfileWizard(os.Stdin, os.Stderr, enterRawMode)
+	if err != nil {
+		if errors.Is(err, errWizardCancelled) {
+			fmt.Fprintln(os.Stderr, "Cancelled; no profile written.")
+			return nil
+		}
+		return err
+	}
+	data, err := marshalProfile(sp)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Keeping %d feature(s) fully enabled and %d individual daemon(s); slimming the rest.\n", len(sp.Except), len(sp.Keep))
+
+	path := dest
+	if intoDir {
+		path = filepath.Join(dest, profileFileName(sp.Name))
+	}
+	if path == "" {
+		_, err = os.Stdout.Write(data)
+		return err
+	}
+
+	if intoDir {
+		if _, err := os.Stat(path); err == nil {
+			os.Stdout.Write(data)
+			return fmt.Errorf("%s already exists; printed the profile above instead of overwriting it", path)
+		}
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	fmt.Fprintf(os.Stderr, "Wrote %s. Apply it with `simslim on <udid> --profile %s`.\n", path, path)
 	return nil
 }
 
@@ -482,6 +544,11 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
+
+	p, err := buildProfile(cmd.String("profile"), cmd.String("except"), cmd.String("keep"))
+	if err != nil {
+		return err
+	}
 	// Resolve once: this pins the device's set (routing every simctl call below,
 	// including a parallel-testing clone), fails fast on an unknown UDID, and
 	// tells us whether to restore a shutdown state afterward.
@@ -490,17 +557,6 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	originallyShutdown := preserveBootState && device.State == "Shutdown"
-
-	p := Profile{ExceptCategories: map[string]bool{}, Keep: map[string]bool{}}
-	for _, id := range splitList(cmd.String("except")) {
-		if _, ok := categoryByID(id); !ok {
-			return fmt.Errorf("unknown category %q (see `simslim profiles`)", id)
-		}
-		p.ExceptCategories[id] = true
-	}
-	for _, l := range splitList(cmd.String("keep")) {
-		p.Keep[l] = true
-	}
 
 	fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.desired()))
 	report := reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
@@ -653,7 +709,11 @@ COMMANDS
   list                 List available simulators and their slim status
   profiles [id]        Show the daemon categories a slim boot disables;
                        pass a category ID to list that category's daemons
+  profile [path]       Interactively build a --profile JSON file (writes to
+                       path or into a directory, or stdout when omitted)
   on <udid>            Slim a simulator (persist disables + reboot slim)
+      --profile path   Apply a committed JSON profile (see below); mutually
+                       exclusive with --except/--keep
       --except ids     Leave these categories enabled (comma-separated)
       --keep labels    Keep these individual daemons running (comma-separated)
       --preserve-boot-state
@@ -684,6 +744,12 @@ COMMANDS
 
 Disabling is persistent (stored in the simulator's launchd overrides) and fully
 reversible with ` + "`simslim off`" + `. Deadlock-prone daemons are never touched.
+
+A ` + "`--profile`" + ` file is JSON you commit alongside your project and apply per run
+(for example a ci.json and a dev.json). Its "except" and "keep" arrays match the
+flags of the same name:
+
+  { "name": "ci", "except": ["search", "store"], "keep": ["com.apple.apsd"] }
 
 Cleanup permanently removes existing cache, log, diagnostic, and temporary-file
 contents; Erase does not bring that history back, although new generated data

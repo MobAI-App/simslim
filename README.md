@@ -114,6 +114,35 @@ Or keep one specific daemon, like push notifications:
 simslim on <udid> --keep com.apple.apsd
 ```
 
+### Profile files
+
+For a repeatable setup, commit a JSON profile alongside your project and apply it
+per run. A `ci.json` and a `dev.json` can slim differently for each purpose:
+
+```json
+{
+  "name": "ci",
+  "description": "UI test runs",
+  "except": ["search", "store"],
+  "keep": ["com.apple.apsd"]
+}
+```
+
+```sh
+simslim on <udid> --profile ci.json
+```
+
+`except` and `keep` mirror the flags of the same name; `name` and `description`
+are for whoever reads the file. Unknown fields, unknown category IDs, and labels
+no category disables are rejected, so a typo fails loudly. `--profile` is the
+single source of truth for its run and cannot be combined with `--except` or
+`--keep`.
+
+To build one interactively, run `simslim profile ci.json`: name it, then use the
+arrow keys and space to tick whole features to keep enabled, or press `→` to open
+a feature and keep individual daemons within it. Point it at a directory to save
+`<name>.json` there, or omit the path to print to stdout.
+
 ## How it works
 
 `simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.

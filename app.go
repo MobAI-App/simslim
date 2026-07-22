@@ -22,6 +22,7 @@ func newApp() *cli.Command {
 	commands := []*cli.Command{
 		{Name: "list", Flags: []cli.Flag{jsonFlag()}, Action: cmdList},
 		{Name: "profiles", Flags: []cli.Flag{jsonFlag()}, Action: cmdProfiles},
+		{Name: "profile", Action: cmdNewProfile},
 		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled daemons grouped by category"}}, Action: cmdStatus},
 		{Name: "measure", Flags: []cli.Flag{jsonFlag()}, Action: cmdMeasure},
 		{Name: "size", Flags: []cli.Flag{jsonFlag()}, Action: cmdSize},
@@ -40,6 +41,7 @@ func newApp() *cli.Command {
 		{Name: "erase", Flags: []cli.Flag{jsonFlag()}, Action: cmdErase},
 		{Name: "delete", Flags: []cli.Flag{jsonFlag()}, Action: cmdDelete},
 		{Name: "on", Flags: []cli.Flag{
+			&cli.StringFlag{Name: "profile", Usage: "apply a JSON profile file (mutually exclusive with --except/--keep)"},
 			&cli.StringFlag{Name: "except", Usage: "comma-separated category IDs to leave fully enabled (see `simslim profiles`)"},
 			&cli.StringFlag{Name: "keep", Usage: "comma-separated launchd labels to keep running"},
 			preserveBootStateFlag("return an initially shutdown simulator to shutdown after reconfiguration"),
