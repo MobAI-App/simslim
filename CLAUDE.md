@@ -44,6 +44,10 @@ which simslim may only repair back to enabled; these are **the only labels the
 tool may ever disable or enable.** Anything outside those sets is never touched.
 `service_descriptions.go` supplies the short per-daemon explanations shown by
 the GUI; its coverage and length are enforced in `profiles_test.go`.
+`profile_file.go` loads a committed JSON profile (`simslim on --profile <path>`)
+whose `except`/`keep` arrays mirror the flags of the same name, validates it
+against the allowlist, and resolves it to a `Profile`; it also holds the
+dependency-free `profile` command's wizard that assembles one interactively.
 `slim.go`'s `ensure()` boots the device, reads its currently
 disabled labels, computes a `delta` against the desired set, and applies the
 changes with `launchctl disable/enable` run inside the simulator via
