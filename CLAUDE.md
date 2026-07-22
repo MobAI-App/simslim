@@ -88,9 +88,15 @@ The app is a thin front end that shells out to that bundled binary.
 
 ## Conventions
 
-- Flags may appear before or after positional args (e.g. `simslim on <udid> --except search`);
-  `parseInterspersedFlags` in `main.go` handles this, since stdlib `flag` stops at
-  the first positional. Use it for any command that takes both flags and a UDID.
+- CLI parsing uses `github.com/urfave/cli/v3` (the project's only dependency). The
+  command tree lives in `app.go` (`newApp`); each subcommand's `Action` is a
+  `cmd*` function in `main.go` that reads flags via `cmd.Bool/String(...)` and
+  positionals via `cmd.Args()`. Flags may appear before or after positional args
+  (e.g. `simslim on <udid> --except search`) — v3 parses flags anywhere by default.
+  `--set` is a global flag (inherited by every subcommand) registered in its flag
+  `Action`. `main.go` still owns `version`/`help`/no-args and the macOS-only guard
+  before handing off to the tree, and routes every command error through `fatal()`
+  for the stable `simslim: <msg>` (exit 1); unknown commands exit 2 with usage.
 - Two timeouts live in `main.go`: `shutdownTimeout` (30s) and `bootTimeout` (6min,
   because a first slim reconfigure boots twice).
 - Progress for multi-minute operations goes to **stderr** via the `reporter` type;
