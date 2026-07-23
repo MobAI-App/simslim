@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // deviceDiskUsage reports allocated filesystem blocks for one exact simulator
 // device directory. It deliberately resolves the UDID through simctl first so
 // aliases such as "all" can never become filesystem paths.
-func deviceDiskUsage(ctx context.Context, udid string) (DiskMeasurement, error) {
+func DeviceDiskUsage(ctx context.Context, udid string) (DiskMeasurement, error) {
 	_, dataDirectory, err := simulatorDataDirectory(ctx, udid)
 	if err != nil {
 		return DiskMeasurement{}, err

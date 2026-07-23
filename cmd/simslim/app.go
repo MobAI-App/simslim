@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	cli "github.com/urfave/cli/v3"
+
+	"github.com/mobai-app/simslim"
 )
 
 // newApp builds the command tree. It handles subcommand dispatch, the global
@@ -76,12 +78,12 @@ func newApp() *cli.Command {
 				Name:  "set",
 				Usage: "also scan these device sets (comma-separated name|path)",
 				Action: func(_ context.Context, _ *cli.Command, value string) error {
-					sets := splitList(value)
+					sets := simslim.SplitList(value)
 					if len(sets) == 0 {
 						return fmt.Errorf("--set requires a device set name (such as `testing`) or a path")
 					}
 					for _, set := range sets {
-						registerDeviceSet(set)
+						simslim.RegisterDeviceSet(set)
 					}
 					return nil
 				},

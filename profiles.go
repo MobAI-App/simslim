@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import "sort"
 
@@ -340,7 +340,7 @@ var Categories = []Category{
 	},
 }
 
-func categoryByID(id string) (Category, bool) {
+func CategoryByID(id string) (Category, bool) {
 	for _, c := range Categories {
 		if c.ID == id {
 			return c, true
@@ -350,7 +350,7 @@ func categoryByID(id string) (Category, bool) {
 }
 
 // slimmableSet is every label a service profile may disable.
-func slimmableSet() map[string]bool {
+func SlimmableSet() map[string]bool {
 	set := make(map[string]bool)
 	for _, c := range Categories {
 		for _, l := range c.Labels {
@@ -363,7 +363,7 @@ func slimmableSet() map[string]bool {
 // managedSet is the complete mutation allowlist. Most labels are slimmable;
 // required labels may only transition back to enabled for compatibility.
 func managedSet() map[string]bool {
-	set := slimmableSet()
+	set := SlimmableSet()
 	for _, category := range Categories {
 		for _, service := range category.AlwaysEnabled {
 			set[service.Label] = true
@@ -379,7 +379,7 @@ type Profile struct {
 }
 
 // desired returns the labels this profile wants disabled.
-func (p Profile) desired() map[string]bool {
+func (p Profile) Desired() map[string]bool {
 	set := make(map[string]bool)
 	for _, c := range Categories {
 		if p.ExceptCategories[c.ID] {

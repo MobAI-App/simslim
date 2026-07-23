@@ -10,7 +10,9 @@ class Simslim < Formula
   depends_on :macos
 
   def install
-    system "go", "build", *std_go_args(ldflags: "-X main.version=#{version}")
+    # std_go_args passes no package path, so the CLI must be named explicitly:
+    # the repo root is the importable simslim library, not package main.
+    system "go", "build", *std_go_args(ldflags: "-X main.version=#{version}"), "./cmd/simslim"
   end
 
   test do

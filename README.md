@@ -28,7 +28,7 @@ brew install mobai-app/tap/simslim
 or
 
 ```sh
-go install github.com/mobai-app/simslim@latest
+go install github.com/mobai-app/simslim/cmd/simslim@latest
 ```
 
 macOS only, and you need Xcode with an iOS Simulator runtime, since simslim
@@ -165,6 +165,55 @@ simslim doctor <udid> --requires push,storekit,universal-links
 Feature IDs are finer-grained than the slimming categories: each maps to just
 the daemons that back one capability. Run `simslim doctor --list` to see them
 all. Both the check and the list support `--json`.
+
+## Use as a Go library
+
+The repo root is an importable package with no external dependencies, so you can
+drive simulators from your own tooling instead of shelling out to the CLI:
+
+```sh
+go get github.com/mobai-app/simslim
+```
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/mobai-app/simslim"
+)
+
+func main() {
+	ctx := context.Background()
+
+	devices, err := simslim.ListDevices(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// Slim every booted simulator, keeping Siri and search enabled.
+	profile, err := simslim.BuildProfile("", "siri,search", "")
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range devices {
+		if d.State != "Booted" {
+			continue
+		}
+		changed, err := simslim.EnableSlim(ctx, d.Set, d.UDID, profile, func(msg string) {
+			fmt.Println(d.UDID, msg)
+		})
+		fmt.Println(d.UDID, "changed:", changed, "err:", err)
+	}
+}
+```
+
+The package never writes to stdout — it returns values and reports progress
+through the `simslim.Reporter` callback you pass in. `simslim.Categories`,
+`simslim.Features`, and `simslim.SlimmableSet()` expose the same allowlist the
+CLI uses. macOS only, since everything runs through `xcrun simctl`.
 
 ## How it works
 

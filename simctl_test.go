@@ -1,4 +1,4 @@
-package main
+package simslim
 
 import (
 	"strings"
@@ -22,12 +22,12 @@ func TestNormalizeSimulatorName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeSimulatorName(tt.input)
+			got, err := NormalizeSimulatorName(tt.input)
 			if (err != nil) != tt.wantError {
-				t.Fatalf("normalizeSimulatorName() error = %v, wantError %v", err, tt.wantError)
+				t.Fatalf("NormalizeSimulatorName() error = %v, wantError %v", err, tt.wantError)
 			}
 			if got != tt.want {
-				t.Errorf("normalizeSimulatorName() = %q, want %q", got, tt.want)
+				t.Errorf("NormalizeSimulatorName() = %q, want %q", got, tt.want)
 			}
 		})
 	}
