@@ -750,6 +750,9 @@ GLOBAL OPTIONS
   --set <name|path>    Also scan these device sets (comma-separated). The default
                        and Xcode ` + "`testing`" + ` (parallel-testing) sets are always
                        scanned; use this to add a set at a custom path.
+  --boot-timeout dur   Max time to boot and reconfigure a simulator (default 10m;
+                       e.g. ` + "`15m`" + `). Raise it for slow CI runners. Also settable
+                       via the SIMSLIM_BOOT_TIMEOUT environment variable.
 
 COMMANDS
   list                 List available simulators and their slim status

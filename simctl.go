@@ -11,11 +11,11 @@ import (
 	"unicode/utf8"
 )
 
-// Default timeouts for the simulator operations this package drives.
-const (
-	ShutdownTimeout = 30 * time.Second
-	BootTimeout     = 6 * time.Minute // a first slim reconfigure boots twice
-)
+const ShutdownTimeout = 30 * time.Second
+
+// BootTimeout bounds a full boot-and-reconfigure (boots twice on a first slim); a
+// var, not a const, so `--boot-timeout` / SIMSLIM_BOOT_TIMEOUT can raise it for CI.
+var BootTimeout = 10 * time.Minute
 
 // Device is a simulator as reported by `simctl list`.
 type Device struct {

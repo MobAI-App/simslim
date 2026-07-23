@@ -79,6 +79,20 @@ simslim delete <udid>    # permanently delete a simulator
 Read-only and simulator-management commands accept `--json` for integrations
 and the macOS app.
 
+### Slow CI runners
+
+`simslim on` boots the simulator, disables ~170 daemons one `launchctl` call at a
+time, then reboots — all under a single 10-minute deadline. Shared CI runners (like
+GitHub-hosted macOS runners) are slower and less predictable, and can blow that
+deadline mid-reconfigure with `context deadline exceeded` errors. Raise it with the
+global `--boot-timeout` flag or the `SIMSLIM_BOOT_TIMEOUT` environment variable:
+
+```sh
+simslim on <udid> --boot-timeout 15m
+# or, for the whole job:
+export SIMSLIM_BOOT_TIMEOUT=15m
+```
+
 ## Disk cleanup
 
 Disk cleanup is permanent and separate from service slimming. `disk-plan` is

@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mobai-app/simslim"
 )
@@ -57,6 +58,48 @@ func TestAppRegistersDeviceSets(t *testing.T) {
 			gotExtra := simslim.ExtraDeviceSetTokens()
 			if !reflect.DeepEqual(gotExtra, tt.wantExtra) {
 				t.Errorf("registered extra sets = %v, want %v", gotExtra, tt.wantExtra)
+			}
+		})
+	}
+}
+
+// TestAppBootTimeoutFlag verifies --boot-timeout and its SIMSLIM_BOOT_TIMEOUT env
+// source override simslim.BootTimeout, and that a non-positive duration is rejected.
+func TestAppBootTimeoutFlag(t *testing.T) {
+	const def = 10 * time.Minute
+	tests := []struct {
+		name      string
+		args      []string
+		env       string // value for SIMSLIM_BOOT_TIMEOUT, "" to leave unset
+		want      time.Duration
+		wantError bool
+	}{
+		{name: "absent keeps default", args: []string{"profiles"}, want: def},
+		{name: "before command", args: []string{"--boot-timeout", "15m", "profiles"}, want: 15 * time.Minute},
+		{name: "after command", args: []string{"profiles", "--boot-timeout", "15m"}, want: 15 * time.Minute},
+		{name: "equals form", args: []string{"profiles", "--boot-timeout=20m"}, want: 20 * time.Minute},
+		{name: "from env", args: []string{"profiles"}, env: "12m", want: 12 * time.Minute},
+		{name: "flag overrides env", args: []string{"profiles", "--boot-timeout", "9m"}, env: "12m", want: 9 * time.Minute},
+		{name: "zero rejected", args: []string{"profiles", "--boot-timeout", "0"}, want: def, wantError: true},
+		{name: "negative rejected", args: []string{"profiles", "--boot-timeout", "-1m"}, want: def, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			simslim.ResetDeviceSets()
+			defer simslim.ResetDeviceSets()
+			orig := simslim.BootTimeout
+			simslim.BootTimeout = def
+			defer func() { simslim.BootTimeout = orig }()
+			if tt.env != "" {
+				t.Setenv("SIMSLIM_BOOT_TIMEOUT", tt.env)
+			}
+			err := runApp(t, tt.args...)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("Run(%v) error = %v, wantError %v", tt.args, err, tt.wantError)
+			}
+			if simslim.BootTimeout != tt.want {
+				t.Errorf("BootTimeout = %v, want %v", simslim.BootTimeout, tt.want)
 			}
 		})
 	}

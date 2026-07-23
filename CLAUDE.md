@@ -115,8 +115,11 @@ The app is a thin front end that shells out to that bundled binary.
   `Action`. `main.go` still owns `version`/`help`/no-args and the macOS-only guard
   before handing off to the tree, and routes every command error through `fatal()`
   for the stable `simslim: <msg>` (exit 1); unknown commands exit 2 with usage.
-- Two timeouts live in `simctl.go`: `ShutdownTimeout` (30s) and `BootTimeout` (6min,
-  because a first slim reconfigure boots twice).
+- Two timeouts live in `simctl.go`: `ShutdownTimeout` (30s, a const) and `BootTimeout`
+  (10min, because a first slim reconfigure boots twice). `BootTimeout` is a package var,
+  not a const, so the CLI's global `--boot-timeout` flag (env `SIMSLIM_BOOT_TIMEOUT`,
+  wired in `app.go` like `--set`) can raise it for slow CI runners where the per-daemon
+  `launchctl` transitions would otherwise blow the deadline mid-reconfigure.
 - Progress for multi-minute operations goes to **stderr** via the `Reporter` callback;
   machine-readable JSON goes to **stdout**. Under `--json`, suppress the stderr
   chatter so consumers reading a combined stream still get clean JSON.

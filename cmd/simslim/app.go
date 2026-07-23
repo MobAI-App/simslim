@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	cli "github.com/urfave/cli/v3"
 
@@ -85,6 +86,19 @@ func newApp() *cli.Command {
 					for _, set := range sets {
 						simslim.RegisterDeviceSet(set)
 					}
+					return nil
+				},
+			},
+			&cli.DurationFlag{
+				Name:    "boot-timeout",
+				Usage:   "max time for a simulator to boot and reconfigure (e.g. 10m, 15m); raise it for slow CI runners",
+				Sources: cli.EnvVars("SIMSLIM_BOOT_TIMEOUT"),
+				Value:   simslim.BootTimeout,
+				Action: func(_ context.Context, _ *cli.Command, d time.Duration) error {
+					if d <= 0 {
+						return fmt.Errorf("--boot-timeout must be a positive duration (such as `15m`)")
+					}
+					simslim.BootTimeout = d
 					return nil
 				},
 			},
