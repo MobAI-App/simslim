@@ -23,7 +23,7 @@ func newApp() *cli.Command {
 	}
 
 	commands := []*cli.Command{
-		{Name: "list", Flags: []cli.Flag{jsonFlag()}, Action: cmdList},
+		{Name: "list", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "booted", Usage: "only list booted simulators"}}, Action: cmdList},
 		{Name: "profiles", Flags: []cli.Flag{jsonFlag()}, Action: cmdProfiles},
 		{Name: "profile", Action: cmdNewProfile},
 		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled daemons grouped by category"}}, Action: cmdStatus},
@@ -33,6 +33,7 @@ func newApp() *cli.Command {
 			&cli.BoolFlag{Name: "list", Usage: "list every checkable feature and its backing daemons"},
 		}, Action: cmdDoctor},
 		{Name: "measure", Flags: []cli.Flag{jsonFlag()}, Action: cmdMeasure},
+		{Name: "top", Flags: []cli.Flag{jsonFlag()}, Action: cmdTop},
 		{Name: "size", Flags: []cli.Flag{jsonFlag()}, Action: cmdSize},
 		{Name: "disk-categories", Flags: []cli.Flag{jsonFlag()}, Action: cmdDiskCategories},
 		{Name: "disk-plan", Flags: []cli.Flag{jsonFlag()}, Action: cmdDiskPlan},

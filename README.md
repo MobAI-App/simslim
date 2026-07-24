@@ -57,7 +57,7 @@ service or disk changes so the copy can serve as a backup.
 ## Usage
 
 ```sh
-simslim list             # simulators and their slim status
+simslim list             # simulators and their slim status (--booted to filter)
 simslim profiles         # what a slim boot turns off
 simslim profiles <id>    # the daemons in one category
 simslim on <udid>        # slim a simulator and reboot it slim
@@ -65,6 +65,7 @@ simslim off <udid>       # put it back to stock
 simslim status <udid>    # how slim a booted simulator is
 simslim doctor <udid> --requires push,storekit,universal-links
 simslim measure <udid>   # a booted simulator's memory footprint
+simslim top              # live fleet monitor; enter a sim for per-daemon RAM/CPU
 simslim size <udid>      # total allocated simulator size
 simslim disk-plan <udid> # measure reclaimable data; read-only
 simslim disk-clean --categories caches,logs --confirm <udid>

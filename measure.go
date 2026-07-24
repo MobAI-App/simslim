@@ -5,14 +5,24 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 // Measurement is a device's real memory cost.
 type Measurement struct {
-	Processes int   `json:"processes"`
-	Bytes     int64 `json:"bytes"` // summed phys_footprint (compressed + dirty), the number that caps how many sims fit
+	Processes int     `json:"processes"`
+	Bytes     int64   `json:"bytes"` // summed phys_footprint (compressed + dirty), the number that caps how many sims fit
+	CPU       float64 `json:"cpu"`   // summed %cpu across the tree (ps's decaying average; can exceed 100 on multicore)
+}
+
+// Process is one process in a simulator's launchd tree, for the top drill-down.
+type Process struct {
+	PID     int     `json:"pid"`
+	Command string  `json:"command"`
+	Bytes   int64   `json:"bytes"`
+	CPU     float64 `json:"cpu"`
 }
 
 // measure sums the phys_footprint of every process in the device's launchd tree.
@@ -24,7 +34,7 @@ func Measure(ctx context.Context, udid string) (Measurement, error) {
 	if err != nil {
 		return Measurement{}, err
 	}
-	children, err := childMap(ctx)
+	snap, err := processSnapshot(ctx)
 	if err != nil {
 		return Measurement{}, err
 	}
@@ -33,7 +43,36 @@ func Measure(ctx context.Context, udid string) (Measurement, error) {
 		return Measurement{}, err
 	}
 
-	return measureTree(root, children, footprint), nil
+	return measureTree(root, snap, footprint), nil
+}
+
+// MeasureProcesses returns every process in the device's launchd tree with its
+// own footprint and cpu, sorted by memory descending — the top drill-down view.
+func MeasureProcesses(ctx context.Context, udid string) ([]Process, error) {
+	root, err := simLaunchdPID(ctx, udid)
+	if err != nil {
+		return nil, err
+	}
+	snap, err := processSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	footprint, err := footprintByPID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	procs := make([]Process, 0)
+	for pid := range treePIDs(root, snap.children) {
+		procs = append(procs, Process{PID: pid, Command: snap.comm[pid], Bytes: footprint[pid], CPU: snap.cpu[pid]})
+	}
+	sort.Slice(procs, func(i, j int) bool {
+		if procs[i].Bytes != procs[j].Bytes {
+			return procs[i].Bytes > procs[j].Bytes
+		}
+		return procs[i].PID < procs[j].PID
+	})
+	return procs, nil
 }
 
 // measureMany takes one process and footprint snapshot for every requested
@@ -55,7 +94,7 @@ func MeasureMany(ctx context.Context, udids []string) (map[string]Measurement, m
 		return measurements, errorsByUDID
 	}
 
-	children, err := childMap(ctx)
+	snap, err := processSnapshot(ctx)
 	if err != nil {
 		for udid := range roots {
 			errorsByUDID[udid] = err.Error()
@@ -71,15 +110,15 @@ func MeasureMany(ctx context.Context, udids []string) (map[string]Measurement, m
 	}
 
 	for udid, root := range roots {
-		measurements[udid] = measureTree(root, children, footprint)
+		measurements[udid] = measureTree(root, snap, footprint)
 	}
 	return measurements, errorsByUDID
 }
 
-func measureTree(root int, children map[int][]int, footprint map[int]int64) Measurement {
-	var m Measurement
-	stack := []int{root}
+// treePIDs collects every pid reachable from root through the child map.
+func treePIDs(root int, children map[int][]int) map[int]bool {
 	seen := map[int]bool{}
+	stack := []int{root}
 	for len(stack) > 0 {
 		pid := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -87,9 +126,17 @@ func measureTree(root int, children map[int][]int, footprint map[int]int64) Meas
 			continue
 		}
 		seen[pid] = true
+		stack = append(stack, children[pid]...)
+	}
+	return seen
+}
+
+func measureTree(root int, snap psSnapshot, footprint map[int]int64) Measurement {
+	var m Measurement
+	for pid := range treePIDs(root, snap.children) {
 		m.Processes++
 		m.Bytes += footprint[pid]
-		stack = append(stack, children[pid]...)
+		m.CPU += snap.cpu[pid]
 	}
 	return m
 }
@@ -106,24 +153,50 @@ func simLaunchdPID(ctx context.Context, udid string) (int, error) {
 	return strconv.Atoi(fields[0])
 }
 
-func childMap(ctx context.Context) (map[int][]int, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid,ppid").Output()
+// psSnapshot is one `ps` sweep of every process: parent links, cpu, and name.
+type psSnapshot struct {
+	children map[int][]int
+	cpu      map[int]float64
+	comm     map[int]string
+}
+
+func processSnapshot(ctx context.Context) (psSnapshot, error) {
+	// comm is the full executable path (untruncated, unlike ucomm); we basename
+	// it so the drill-down shows real daemon names like backboardd or SpringBoard.
+	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid,ppid,%cpu,comm").Output()
 	if err != nil {
-		return nil, err
+		return psSnapshot{}, err
 	}
-	children := map[int][]int{}
-	for _, line := range strings.Split(string(out), "\n") {
+	return parsePS(string(out)), nil
+}
+
+func parsePS(out string) psSnapshot {
+	snap := psSnapshot{children: map[int][]int{}, cpu: map[int]float64{}, comm: map[int]string{}}
+	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) != 2 {
+		if len(f) < 4 {
 			continue
 		}
 		pid, err1 := strconv.Atoi(f[0])
 		ppid, err2 := strconv.Atoi(f[1])
-		if err1 == nil && err2 == nil {
-			children[ppid] = append(children[ppid], pid)
+		if err1 != nil || err2 != nil {
+			continue
 		}
+		snap.children[ppid] = append(snap.children[ppid], pid)
+		if cpu, err := strconv.ParseFloat(f[2], 64); err == nil {
+			snap.cpu[pid] = cpu
+		}
+		snap.comm[pid] = commName(strings.Join(f[3:], " ")) // join defends against spaces in the path
 	}
-	return children, nil
+	return snap
+}
+
+// commName reduces a full executable path to its basename.
+func commName(path string) string {
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 var topMemLine = regexp.MustCompile(`^\s*(\d+)\s+([0-9.]+[KMGB+]?)`)
