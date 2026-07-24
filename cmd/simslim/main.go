@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/mobai-app/simslim"
 	cli "github.com/urfave/cli/v3"
 )
@@ -54,6 +55,15 @@ func cmdList(ctx context.Context, cmd *cli.Command) error {
 	devices, err := simslim.ListDevices(ctx)
 	if err != nil {
 		return err
+	}
+	if cmd.Bool("booted") {
+		booted := devices[:0]
+		for _, d := range devices {
+			if d.State == "Booted" {
+				booted = append(booted, d)
+			}
+		}
+		devices = booted
 	}
 	sort.Slice(devices, func(i, j int) bool {
 		if devices[i].OSVersion != devices[j].OSVersion {
@@ -330,6 +340,75 @@ func cmdMeasure(ctx context.Context, cmd *cli.Command) error {
 	}
 	fmt.Printf("%s: %d processes, %s memory footprint\n", udid, m.Processes, humanBytes(m.Bytes))
 	return nil
+}
+
+func cmdTop(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args().Slice()
+	if len(args) > 1 {
+		return fmt.Errorf("top takes at most one simulator UDID")
+	}
+	var udid string
+	if len(args) == 1 {
+		udid = args[0]
+	}
+
+	// --json and piped output are one-shot; the live TUI needs a real terminal.
+	if cmd.Bool("json") {
+		if udid != "" {
+			procs, err := simslim.MeasureProcesses(ctx, udid)
+			if err != nil {
+				return err
+			}
+			out := simslim.TopProcesses{UDID: udid, Name: deviceName(ctx, udid), Processes: procs}
+			for _, p := range procs {
+				out.TotalBytes += p.Bytes
+			}
+			return writeJSON(out)
+		}
+		out, err := simslim.FleetSnapshot(ctx, true)
+		if err != nil {
+			return err
+		}
+		return writeJSON(out)
+	}
+
+	if !isTerminal(os.Stdout) {
+		if udid != "" {
+			procs, err := simslim.MeasureProcesses(ctx, udid)
+			if err != nil {
+				return err
+			}
+			fmt.Print(staticProcs(simslim.TopProcesses{UDID: udid, Name: deviceName(ctx, udid), Processes: procs}))
+			return nil
+		}
+		out, err := simslim.FleetSnapshot(ctx, false)
+		if err != nil {
+			return err
+		}
+		fmt.Print(staticFleet(out))
+		return nil
+	}
+
+	return runTopTUI(ctx, udid, deviceName(ctx, udid))
+}
+
+// deviceName resolves a friendly name for a UDID, falling back to empty on error
+// so the caller can degrade to the short UDID.
+func deviceName(ctx context.Context, udid string) string {
+	if udid == "" {
+		return ""
+	}
+	if d, err := simslim.FindDevice(ctx, udid, ""); err == nil {
+		return d.Name
+	}
+	return ""
+}
+
+// isTerminal reports whether f is an interactive terminal, so `top` can fall
+// back to a one-shot dump when piped, redirected, or run under a non-tty like
+// /dev/null (which is a character device but not a terminal).
+func isTerminal(f *os.File) bool {
+	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
 func cmdSize(ctx context.Context, cmd *cli.Command) error {
@@ -756,6 +835,7 @@ GLOBAL OPTIONS
 
 COMMANDS
   list                 List available simulators and their slim status
+      --booted         Only list booted simulators
   profiles [id]        Show the daemon categories a slim boot disables;
                        pass a category ID to list that category's daemons
   profile [path]       Interactively build a --profile JSON file (writes to
@@ -777,6 +857,10 @@ COMMANDS
       --requires ids   Comma-separated feature IDs to verify
       --list           List every checkable feature and its daemons
   measure <udid>       Report a booted simulator's memory footprint
+  top [udid]           Live fleet monitor: booted simulators and their RAM,
+                       CPU, and process counts. Enter a row to drill into a
+                       simulator's per-daemon footprint. Pass a UDID to open
+                       that drill-down directly. --json prints a one-shot snapshot
   size <udid>          Report a simulator's allocated disk footprint
   disk-categories      Show cleanup and protected system-asset categories
   disk-plan <udid>     Measure reclaimable and stored data without deleting

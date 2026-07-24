@@ -55,3 +55,29 @@ type FeatureStatus struct {
 type DiskMeasurement struct {
 	Bytes int64 `json:"bytes"`
 }
+
+// TopSim is one booted simulator's live resource snapshot for `simslim top`.
+type TopSim struct {
+	Device
+	ManagedDisabled *int         `json:"managedDisabled,omitempty"`
+	ManagedTotal    int          `json:"managedTotal"`
+	StatusError     string       `json:"statusError,omitempty"`
+	Memory          *Measurement `json:"memory,omitempty"`
+	MemoryError     string       `json:"memoryError,omitempty"`
+	DiskBytes       *int64       `json:"diskBytes,omitempty"`
+}
+
+// TopOutput is the fleet view: every booted simulator plus the summed footprint
+// that decides how many more fit.
+type TopOutput struct {
+	Sims       []TopSim `json:"sims"`
+	TotalBytes int64    `json:"totalBytes"`
+}
+
+// TopProcesses is one simulator's per-daemon breakdown, the top drill-down.
+type TopProcesses struct {
+	UDID       string    `json:"udid"`
+	Name       string    `json:"name,omitempty"`
+	Processes  []Process `json:"processes"`
+	TotalBytes int64     `json:"totalBytes"`
+}

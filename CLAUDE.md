@@ -72,7 +72,11 @@ disables the profile; `off` re-enables the whole managed set back to stock.
 **simctl wrapper.** `simctl.go` is the only place that shells out to
 `xcrun simctl` (list/boot/shutdown/clone/erase/delete/spawn). `measure.go` sums
 `phys_footprint` across the simulator's launchd process tree (via `pgrep`/`ps`/`top`)
-— that's the memory figure that decides how many simulators fit. `disk.go`,
+— that's the memory figure that decides how many simulators fit. `MeasureProcesses`
+keeps the per-process detail (footprint + cpu, from the same snapshot) for the
+`top` drill-down. `fleet.go`'s `FleetSnapshot` composes booted devices + slim
+status + `MeasureMany` into the fleet view; the live TUI is `cmd/simslim/top.go`
+(Bubble Tea), which also has a `--json`/non-TTY one-shot fallback. `disk.go`,
 `disk_cleanup.go`, and `disk_inventory.go` handle disk measurement and the
 separate, permanent disk-cleanup feature.
 
@@ -106,8 +110,10 @@ The app is a thin front end that shells out to that bundled binary.
 
 ## Conventions
 
-- CLI parsing uses `github.com/urfave/cli/v3` (the CLI's only dependency; the
-  library has none). The command tree lives in `cmd/simslim/app.go` (`newApp`);
+- CLI parsing uses `github.com/urfave/cli/v3`; the `top` command's live TUI uses
+  `github.com/charmbracelet/bubbletea` + `lipgloss`. These are the CLI's only
+  dependencies — the root library still has none, so importers never inherit a
+  terminal stack. The command tree lives in `cmd/simslim/app.go` (`newApp`);
   each subcommand's `Action` is a `cmd*` function in `cmd/simslim/main.go` that
   reads flags via `cmd.Bool/String(...)` and positionals via `cmd.Args()`. Flags may appear before or after positional args
   (e.g. `simslim on <udid> --except search`) — v3 parses flags anywhere by default.
