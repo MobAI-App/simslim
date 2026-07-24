@@ -347,7 +347,7 @@ struct ContentView: View {
         actionTitle: "Clone Simulator",
         systemImage: "plus.square.on.square",
         explanation:
-          "The clone keeps the source simulator’s apps, data, settings, and service profile. Use it as a point-in-time backup before slimming or as an independent simulator for general development and testing. A booted source is briefly shut down and then returned to its original boot state.",
+          "The clone keeps the source simulator’s apps, data, and settings. It does not keep the service profile: a clone starts stock and has to be slimmed again. Use it as a point-in-time backup before slimming or as an independent simulator for general development and testing. A booted source is briefly shut down and then returned to its original boot state.",
         initialName: "\(device.name) Copy",
         device: device
       ) { name in
