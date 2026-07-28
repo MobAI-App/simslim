@@ -150,7 +150,7 @@ simslim on <udid> --profile ci.json
 
 `except` and `keep` mirror the flags of the same name; `name` and `description`
 are for whoever reads the file. Unknown fields, unknown category IDs, and labels
-no category disables are rejected, so a typo fails loudly. `--profile` is the
+that no category disables are rejected, so a typo fails loudly. `--profile` is the
 single source of truth for its run and cannot be combined with `--except` or
 `--keep`.
 
