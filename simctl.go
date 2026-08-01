@@ -364,44 +364,81 @@ func parseDisabled(output string) map[string]bool {
 	return set
 }
 
+// SpawnTimeout bounds a single `simctl spawn launchctl` transition. Right
+// after a first boot — especially on older Intel hosts — the simulator is
+// saturated by data migration and Spotlight indexing, and an individual spawn
+// can stall for many minutes. A per-spawn bound turns one stuck spawn into a
+// retryable failure instead of letting it consume the whole reconfigure
+// budget; the label is retried on a later pass once the device has settled.
+// A var, not a const, so SIMSLIM_SPAWN_TIMEOUT can raise it for slow hosts.
+var SpawnTimeout = 2 * time.Minute
+
+// applyPasses is how many times applyDelta walks the remaining labels.
+// Disables are persistent, so each pass only retries what previous passes
+// failed; on a freshly booted device the later passes run against a warm
+// launchd and typically finish in seconds per label.
+const applyPasses = 3
+
 // applyDelta disables then enables the given labels. launchctl must be the
 // direct target of `simctl spawn`: a shell wrapper (`simctl spawn udid sh -c
 // '...'`) does not propagate DYLD_ROOT_PATH, so the nested launchctl aborts with
 // "DYLD_ROOT_PATH not set for simulator program". launchctl exits 0 even when it
 // prints the benign "switch to user/foreground" note, so a non-zero exit is a
-// real failure; failures are aggregated rather than aborting the whole profile.
+// real failure; failures are collected and retried on later passes rather than
+// aborting the whole profile.
 func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, report Reporter) error {
-	total := len(toDisable) + len(toEnable)
+	type transition struct{ action, label string }
+	pending := make([]transition, 0, len(toDisable)+len(toEnable))
+	for _, l := range toDisable {
+		pending = append(pending, transition{"disable", l})
+	}
+	for _, l := range toEnable {
+		pending = append(pending, transition{"enable", l})
+	}
+	total := len(pending)
 	run := func(action, label string) error {
-		out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "spawn", udid,
+		spawnCtx, cancel := context.WithTimeout(ctx, SpawnTimeout)
+		defer cancel()
+		out, err := exec.CommandContext(spawnCtx, "xcrun", simctlArgs(set, "spawn", udid,
 			"launchctl", action, "system/"+label)...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s %s: %w: %s", action, label, err, strings.TrimSpace(string(out)))
 		}
 		return nil
 	}
-	var failures []string
 	done := 0
-	step := func(action, label string) {
-		if err := run(action, label); err != nil {
-			failures = append(failures, err.Error())
+	var failures []string
+	for pass := 1; pass <= applyPasses && len(pending) > 0; pass++ {
+		if pass > 1 {
+			report.report(fmt.Sprintf("  retrying %d failed services (pass %d/%d)...",
+				len(pending), pass, applyPasses))
 		}
-		done++
-		// One process per label is slow (~30s for a full profile); a periodic
-		// count reassures the caller that it has not hung.
-		if done == total || done%20 == 0 {
-			report.report(fmt.Sprintf("  %d/%d services updated", done, total))
+		var failed []transition
+		failures = failures[:0]
+		for _, t := range pending {
+			if err := run(t.action, t.label); err != nil {
+				if ctx.Err() != nil {
+					// The overall reconfigure budget is exhausted; stop
+					// instead of burning through the rest of the labels.
+					return fmt.Errorf("%d/%d launchctl transitions incomplete: %w",
+						total-done, total, ctx.Err())
+				}
+				failed = append(failed, t)
+				failures = append(failures, err.Error())
+				continue
+			}
+			done++
+			// One process per label is slow (~30s for a full profile); a periodic
+			// count reassures the caller that it has not hung.
+			if done == total || done%20 == 0 {
+				report.report(fmt.Sprintf("  %d/%d services updated", done, total))
+			}
 		}
+		pending = failed
 	}
-	for _, l := range toDisable {
-		step("disable", l)
-	}
-	for _, l := range toEnable {
-		step("enable", l)
-	}
-	if len(failures) > 0 {
-		return fmt.Errorf("%d/%d launchctl transitions failed: %s",
-			len(failures), total, strings.Join(failures, "; "))
+	if len(pending) > 0 {
+		return fmt.Errorf("%d/%d launchctl transitions failed after %d passes: %s",
+			len(pending), total, applyPasses, strings.Join(failures, "; "))
 	}
 	return nil
 }

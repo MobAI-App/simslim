@@ -832,6 +832,11 @@ GLOBAL OPTIONS
   --boot-timeout dur   Max time to boot and reconfigure a simulator (default 10m;
                        e.g. ` + "`15m`" + `). Raise it for slow CI runners. Also settable
                        via the SIMSLIM_BOOT_TIMEOUT environment variable.
+  --spawn-timeout dur  Max time for a single launchctl transition inside the
+                       simulator (default 2m). Raise it for hosts where a busy
+                       first boot makes individual spawns very slow. Also
+                       settable via the SIMSLIM_SPAWN_TIMEOUT environment
+                       variable.
 
 COMMANDS
   list                 List available simulators and their slim status

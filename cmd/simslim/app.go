@@ -103,6 +103,19 @@ func newApp() *cli.Command {
 					return nil
 				},
 			},
+			&cli.DurationFlag{
+				Name:    "spawn-timeout",
+				Usage:   "max time for a single launchctl transition inside the simulator (e.g. 2m, 5m); raise it for slow hosts",
+				Sources: cli.EnvVars("SIMSLIM_SPAWN_TIMEOUT"),
+				Value:   simslim.SpawnTimeout,
+				Action: func(_ context.Context, _ *cli.Command, d time.Duration) error {
+					if d <= 0 {
+						return fmt.Errorf("--spawn-timeout must be a positive duration (such as `2m`)")
+					}
+					simslim.SpawnTimeout = d
+					return nil
+				},
+			},
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			if args := cmd.Args().Slice(); len(args) > 0 {
