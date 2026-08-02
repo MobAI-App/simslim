@@ -33,6 +33,31 @@ func TestNormalizeSimulatorName(t *testing.T) {
 	}
 }
 
+func TestParseBatchOK(t *testing.T) {
+	output := strings.Join([]string{
+		"Warning: Please switch to user/foreground/com.apple.siriactionsd service identifier (rdar://78126471)",
+		"simslim-ok com.apple.siriactionsd",
+		"simslim-fail com.apple.assistantd",
+		"  simslim-ok com.apple.suggestd",
+		"simslim-ok ",
+		"unrelated noise",
+		"",
+	}, "\n")
+	got := parseBatchOK(output)
+	want := map[string]bool{
+		"com.apple.siriactionsd": true,
+		"com.apple.suggestd":     true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("parseBatchOK() = %v, want %v", got, want)
+	}
+	for label := range want {
+		if !got[label] {
+			t.Errorf("parseBatchOK() missing %q", label)
+		}
+	}
+}
+
 func TestParseClonedUDID(t *testing.T) {
 	const udid = "00000000-0000-0000-0000-000000000001"
 	got, err := parseClonedUDID([]byte("\n" + udid + "\n"))

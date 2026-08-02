@@ -379,13 +379,71 @@ var SpawnTimeout = 2 * time.Minute
 // launchd and typically finish in seconds per label.
 const applyPasses = 3
 
-// applyDelta disables then enables the given labels. launchctl must be the
-// direct target of `simctl spawn`: a shell wrapper (`simctl spawn udid sh -c
-// '...'`) does not propagate DYLD_ROOT_PATH, so the nested launchctl aborts with
-// "DYLD_ROOT_PATH not set for simulator program". launchctl exits 0 even when it
-// prints the benign "switch to user/foreground" note, so a non-zero exit is a
-// real failure; failures are collected and retried on later passes rather than
-// aborting the whole profile.
+// batchSize is how many labels a single spawned shell walks on the first
+// pass. Small enough that one chunk stays well inside SpawnTimeout even on a
+// busy first boot, large enough to amortize the per-spawn simctl cost.
+const batchSize = 40
+
+// batchWave is how many launchctl transitions batchScript runs concurrently.
+// Overrides are independent launchd writes, so a small wave is safe and hides
+// most of the per-transition latency; keeping it modest avoids hammering a
+// simulator that is still settling after its first boot.
+const batchWave = 8
+
+// batchScript runs launchctl once per positional label inside one spawned
+// shell, in waves of $2 concurrent transitions, and prints a marker per
+// outcome. dyld strips DYLD_ROOT_PATH from the shell's environment (it is a
+// restricted platform binary), so the nested launchctl would abort with
+// "DYLD_ROOT_PATH not set for simulator program";
+// SIMULATOR_ROOT carries the same runtime root and does survive, so the
+// script restores DYLD_ROOT_PATH from it. Only marked-ok labels count as
+// done, so a chunk that dies mid-way (timeout, wedged daemon) just leaves its
+// unconfirmed labels for the per-label passes. The trailing `exit 0` keeps an
+// individual launchctl failure from turning into a chunk-level error.
+const batchScript = `[ -n "$SIMULATOR_ROOT" ] && export DYLD_ROOT_PATH="$SIMULATOR_ROOT"
+action=$1; wave=$2; shift 2
+n=0
+for l in "$@"; do
+  { launchctl "$action" "system/$l" && echo "simslim-ok $l" || echo "simslim-fail $l"; } &
+  n=$((n + 1))
+  [ $((n % wave)) -eq 0 ] && wait
+done
+wait
+exit 0`
+
+// runBatch applies one action to a chunk of labels in a single `simctl spawn`
+// and returns the labels the shell confirmed. Batching is best-effort: any
+// label without an ok marker (shell missing, environment not propagated,
+// chunk timeout) falls back to the per-label passes, so a batch can only
+// speed things up, never lose a transition.
+func runBatch(ctx context.Context, set, udid, action string, labels []string) map[string]bool {
+	spawnCtx, cancel := context.WithTimeout(ctx, SpawnTimeout)
+	defer cancel()
+	args := simctlArgs(set, "spawn", udid, "/bin/sh", "-c", batchScript, "simslim-batch",
+		action, fmt.Sprint(batchWave))
+	args = append(args, labels...)
+	out, _ := exec.CommandContext(spawnCtx, "xcrun", args...).CombinedOutput()
+	return parseBatchOK(string(out))
+}
+
+// parseBatchOK collects the labels batchScript confirmed with an ok marker.
+func parseBatchOK(output string) map[string]bool {
+	ok := map[string]bool{}
+	for _, line := range strings.Split(output, "\n") {
+		if label, found := strings.CutPrefix(strings.TrimSpace(line), "simslim-ok "); found && label != "" {
+			ok[label] = true
+		}
+	}
+	return ok
+}
+
+// applyDelta disables then enables the given labels. The first pass batches
+// them through a spawned shell, chunked so one stall costs at most a chunk;
+// later passes run launchctl as the direct target of `simctl spawn`, one
+// label at a time, for precise per-label errors. launchctl exits 0 even when
+// it prints the benign "switch to user/foreground" note, so a non-zero exit
+// is a real failure; failures are collected and retried on later passes
+// rather than aborting the whole profile.
 func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, report Reporter) error {
 	type transition struct{ action, label string }
 	pending := make([]transition, 0, len(toDisable)+len(toEnable))
@@ -407,12 +465,42 @@ func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []str
 		return nil
 	}
 	done := 0
-	var failures []string
-	for pass := 1; pass <= applyPasses && len(pending) > 0; pass++ {
-		if pass > 1 {
-			report.report(fmt.Sprintf("  retrying %d failed services (pass %d/%d)...",
-				len(pending), pass, applyPasses))
+
+	// First pass: batched. Chunks are grouped by action so the shell script
+	// stays a single launchctl verb per invocation.
+	var remaining []transition
+	for _, action := range []string{"disable", "enable"} {
+		var labels []string
+		for _, t := range pending {
+			if t.action == action {
+				labels = append(labels, t.label)
+			}
 		}
+		for start := 0; start < len(labels); start += batchSize {
+			if ctx.Err() != nil {
+				return fmt.Errorf("%d/%d launchctl transitions incomplete: %w",
+					total-done, total, ctx.Err())
+			}
+			chunk := labels[start:min(start+batchSize, len(labels))]
+			ok := runBatch(ctx, set, udid, action, chunk)
+			for _, l := range chunk {
+				if ok[l] {
+					done++
+				} else {
+					remaining = append(remaining, transition{action, l})
+				}
+			}
+			if done > 0 {
+				report.report(fmt.Sprintf("  %d/%d services updated", done, total))
+			}
+		}
+	}
+	pending = remaining
+
+	var failures []string
+	for pass := 2; pass <= applyPasses && len(pending) > 0; pass++ {
+		report.report(fmt.Sprintf("  retrying %d failed services (pass %d/%d)...",
+			len(pending), pass, applyPasses))
 		var failed []transition
 		failures = failures[:0]
 		for _, t := range pending {
@@ -428,8 +516,6 @@ func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []str
 				continue
 			}
 			done++
-			// One process per label is slow (~30s for a full profile); a periodic
-			// count reassures the caller that it has not hung.
 			if done == total || done%20 == 0 {
 				report.report(fmt.Sprintf("  %d/%d services updated", done, total))
 			}
