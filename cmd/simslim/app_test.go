@@ -133,3 +133,45 @@ func TestAppFlagParsing(t *testing.T) {
 		})
 	}
 }
+
+// TestAppSpawnTimeoutFlag verifies --spawn-timeout and its SIMSLIM_SPAWN_TIMEOUT env
+// source override simslim.SpawnTimeout, and that a non-positive duration is rejected.
+func TestAppSpawnTimeoutFlag(t *testing.T) {
+	const def = 2 * time.Minute
+	tests := []struct {
+		name      string
+		args      []string
+		env       string // value for SIMSLIM_SPAWN_TIMEOUT, "" to leave unset
+		want      time.Duration
+		wantError bool
+	}{
+		{name: "absent keeps default", args: []string{"profiles"}, want: def},
+		{name: "before command", args: []string{"--spawn-timeout", "5m", "profiles"}, want: 5 * time.Minute},
+		{name: "after command", args: []string{"profiles", "--spawn-timeout", "5m"}, want: 5 * time.Minute},
+		{name: "equals form", args: []string{"profiles", "--spawn-timeout=4m"}, want: 4 * time.Minute},
+		{name: "from env", args: []string{"profiles"}, env: "3m", want: 3 * time.Minute},
+		{name: "flag overrides env", args: []string{"profiles", "--spawn-timeout", "90s"}, env: "3m", want: 90 * time.Second},
+		{name: "zero rejected", args: []string{"profiles", "--spawn-timeout", "0"}, want: def, wantError: true},
+		{name: "negative rejected", args: []string{"profiles", "--spawn-timeout", "-1m"}, want: def, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			simslim.ResetDeviceSets()
+			defer simslim.ResetDeviceSets()
+			orig := simslim.SpawnTimeout
+			simslim.SpawnTimeout = def
+			defer func() { simslim.SpawnTimeout = orig }()
+			if tt.env != "" {
+				t.Setenv("SIMSLIM_SPAWN_TIMEOUT", tt.env)
+			}
+			err := runApp(t, tt.args...)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("Run(%v) error = %v, wantError %v", tt.args, err, tt.wantError)
+			}
+			if simslim.SpawnTimeout != tt.want {
+				t.Errorf("SpawnTimeout = %v, want %v", simslim.SpawnTimeout, tt.want)
+			}
+		})
+	}
+}

@@ -94,6 +94,17 @@ simslim on <udid> --boot-timeout 15m
 export SIMSLIM_BOOT_TIMEOUT=15m
 ```
 
+Each individual `launchctl` transition is also bounded by its own 2-minute
+timeout, and the first transitions after a cold boot can exceed that on slow
+hosts (failed ones are retried automatically). Raise it with the global
+`--spawn-timeout` flag or the `SIMSLIM_SPAWN_TIMEOUT` environment variable:
+
+```sh
+simslim on <udid> --spawn-timeout 5m
+# or, for the whole job:
+export SIMSLIM_SPAWN_TIMEOUT=5m
+```
+
 ## Disk cleanup
 
 Disk cleanup is permanent and separate from service slimming. `disk-plan` is
