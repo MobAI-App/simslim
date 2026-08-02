@@ -14,7 +14,15 @@ type Feature struct {
 // Features maps commonly required capabilities to the daemons they need running.
 var Features = []Feature{
 	{ID: "push", Name: "Push notifications", Labels: []string{"com.apple.apsd"}},
-	{ID: "storekit", Name: "StoreKit / in-app purchase", Labels: []string{"com.apple.storekitd"}},
+	// In-app purchase needs the store daemons plus AMS, which presents the
+	// payment sheet — products load without AMS but purchases fail.
+	{ID: "storekit", Name: "StoreKit / in-app purchase", Labels: []string{
+		"com.apple.storekitd",
+		"com.apple.itunesstored",
+		"com.apple.amsaccountsd",
+		"com.apple.amsengagementd",
+		"com.apple.amsondevicestoraged",
+	}},
 	{ID: "app-store", Name: "App Store", Labels: []string{"com.apple.appstored", "com.apple.itunesstored"}},
 	{ID: "universal-links", Name: "Universal links / associated domains", Labels: []string{"com.apple.swcd"}},
 	{ID: "spotlight", Name: "Spotlight & Settings search", Labels: []string{"com.apple.searchd", "com.apple.searchtoold"}},

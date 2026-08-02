@@ -37,15 +37,42 @@ func TestManagedExcludesForbidden(t *testing.T) {
 	}
 }
 
-func TestNoDuplicateLabels(t *testing.T) {
-	seen := map[string]string{}
+// Labels may repeat across categories (a daemon can serve several features)
+// but never within one category.
+func TestNoDuplicateLabelsWithinCategory(t *testing.T) {
+	for _, c := range Categories {
+		seen := map[string]bool{}
+		for _, l := range c.Labels {
+			if seen[l] {
+				t.Errorf("label %q appears twice in category %q", l, c.ID)
+			}
+			seen[l] = true
+		}
+	}
+}
+
+func TestDesiredKeepsSharedLabelsOfExceptedCategories(t *testing.T) {
+	owners := map[string][]string{}
 	for _, c := range Categories {
 		for _, l := range c.Labels {
-			if prev, ok := seen[l]; ok {
-				t.Errorf("label %q appears in both %q and %q", l, prev, c.ID)
-			}
-			seen[l] = c.ID
+			owners[l] = append(owners[l], c.ID)
 		}
+	}
+	sharedSeen := false
+	for l, ids := range owners {
+		if len(ids) < 2 {
+			continue
+		}
+		sharedSeen = true
+		for _, id := range ids {
+			p := Profile{ExceptCategories: map[string]bool{id: true}, Keep: map[string]bool{}}
+			if p.Desired()[l] {
+				t.Errorf("--except %s should keep shared label %q enabled", id, l)
+			}
+		}
+	}
+	if !sharedSeen {
+		t.Error("expected at least one shared label (the AMS payment-sheet daemons)")
 	}
 }
 

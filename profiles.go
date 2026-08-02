@@ -23,6 +23,9 @@ type AlwaysEnabledService struct {
 }
 
 // Categories is the complete allowlist of daemons a profile may disable.
+// Categories may overlap: a label lives in every category whose feature needs
+// it, and an excepted category keeps all its labels enabled even when a
+// slimmed category also lists them.
 // ApproxMemoryMB values are rounded median increases in phys_footprint when
 // only that category is kept on versus a fully slim iOS 26.5 clean boot. The
 // estimates vary by runtime and workload and are not additive.
@@ -134,6 +137,11 @@ var Categories = []Category{
 			"com.apple.itunescloudd",
 			"com.apple.itunesstored",
 			"com.apple.storekitd",
+			// Apple Media Services renders the in-app purchase payment
+			// sheet; these three are shared with the icloud category.
+			"com.apple.amsaccountsd",
+			"com.apple.amsengagementd",
+			"com.apple.amsondevicestoraged",
 			"com.apple.videosubscriptionsd",
 			"com.apple.assetsubscriptiond",
 			"com.apple.musicd",
@@ -378,19 +386,20 @@ type Profile struct {
 	Keep             map[string]bool // individual labels to leave enabled
 }
 
-// desired returns the labels this profile wants disabled.
+// desired returns the labels this profile wants disabled. Categories may share
+// labels, so a label stays enabled when any excepted category lists it.
 func (p Profile) Desired() map[string]bool {
-	set := make(map[string]bool)
+	set := SlimmableSet()
 	for _, c := range Categories {
-		if p.ExceptCategories[c.ID] {
+		if !p.ExceptCategories[c.ID] {
 			continue
 		}
 		for _, l := range c.Labels {
-			if p.Keep[l] {
-				continue
-			}
-			set[l] = true
+			delete(set, l)
 		}
+	}
+	for l := range p.Keep {
+		delete(set, l)
 	}
 	return set
 }

@@ -46,11 +46,17 @@ final class AppModel: ObservableObject {
     isRefreshing || batchProgress != nil || !activeOperations.isEmpty
   }
 
-  var disabledDaemonCount: Int {
-    categories.reduce(0) { count, category in
-      guard !categoryIsKept(category) else { return count }
-      return count + category.labels.filter { !keptServiceLabels.contains($0) }.count
+  /// Labels kept enabled by a kept category or an individual keep. Categories
+  /// may share labels, so a shared label is kept when any of its categories is.
+  var effectiveKeptLabels: Set<String> {
+    categories.reduce(into: keptServiceLabels) { kept, category in
+      if categoryIsKept(category) { kept.formUnion(category.labels) }
     }
+  }
+
+  var disabledDaemonCount: Int {
+    let allLabels = categories.reduce(into: Set<String>()) { $0.formUnion($1.labels) }
+    return allLabels.subtracting(effectiveKeptLabels).count
   }
 
   var bootedCount: Int { devices.filter(\.isBooted).count }
@@ -196,8 +202,8 @@ final class AppModel: ObservableObject {
       || category.labels.allSatisfy { keptServiceLabels.contains($0) }
   }
 
-  func serviceIsKept(_ label: String, in category: SlimCategory) -> Bool {
-    categoryIsKept(category) || keptServiceLabels.contains(label)
+  func serviceIsKept(_ label: String) -> Bool {
+    effectiveKeptLabels.contains(label)
   }
 
   func setService(_ label: String, in category: SlimCategory, keptEnabled: Bool) {
