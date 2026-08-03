@@ -982,7 +982,7 @@ private struct ServiceToggle: View {
 
   private var isKeptEnabled: Binding<Bool> {
     Binding(
-      get: { model.serviceIsKept(label, in: category) },
+      get: { model.serviceIsKept(label) },
       set: { model.setService(label, in: category, keptEnabled: $0) }
     )
   }

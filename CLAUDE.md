@@ -47,7 +47,11 @@ a breaking change for importers as well as for the CLI.
 
 **The slimming model (the core idea).** `profiles.go` defines `Categories`, an
 allowlist of launchd daemon labels grouped by user-facing feature (siri, search,
-icloud, …). `SlimmableSet()` is the union of every label in `Categories`.
+icloud, …). Categories may overlap — a label lives in every category whose
+feature needs it (e.g. the AMS payment-sheet daemons are in both `store` and
+`icloud`), and `Profile.Desired()` keeps a label enabled when **any** excepted
+category lists it. `SlimmableSet()` is the deduplicated union of every label in
+`Categories`.
 `managedSet()` adds each category's `AlwaysEnabled` compatibility services,
 which simslim may only repair back to enabled; these are **the only labels the
 tool may ever disable or enable.** Anything outside those sets is never touched.
