@@ -63,6 +63,7 @@ simslim profiles <id>    # the daemons in one category
 simslim on <udid>        # slim a simulator and reboot it slim
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # how slim a booted simulator is
+simslim verify <udid> --profile ci.json   # exact profile match; non-zero on drift
 simslim doctor <udid> --requires push,storekit,universal-links
 simslim measure <udid>   # a booted simulator's memory footprint
 simslim top              # live fleet monitor; enter a sim for per-daemon RAM/CPU
@@ -192,6 +193,25 @@ Feature IDs are finer-grained than the slimming categories: each maps to just
 the daemons that back one capability. Run `simslim doctor --list` to see them
 all. Both the check and the list support `--json`.
 
+### Verifying a profile still holds
+
+The disable overrides are per-simulator state that is easy to lose without
+noticing: a `clone` comes up stock, so does a deleted-and-recreated device or a
+simulator from a new runtime, and nothing else fails loudly when that happens
+— the simulator just quietly runs heavy again. `verify` compares a booted
+simulator's overrides against a profile — the same `--profile`/`--except`/`--keep`
+you passed to `on` — and exits non-zero listing the drift, so a script or CI
+step can catch it and re-run `simslim on` (idempotent: it only applies the
+missing delta) to repair:
+
+```sh
+simslim verify <udid> --profile ci.json || simslim on <udid> --profile ci.json
+```
+
+Where `doctor` answers "do the features my tests need still work?", `verify`
+answers "is this simulator in exactly the slim state I configured?". Supports
+`--json`.
+
 ## Use as a Go library
 
 The repo root is an importable package with no external dependencies, so you can
@@ -250,7 +270,7 @@ iOS 17): `launchctl` accepts each disable, but the simulator comes back stock.
 `simslim on` reads the state back after its reboot and fails with a clear error
 instead of claiming success, so slimming requires an iOS 18 or newer runtime.
 
-This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database and nowhere else. `simslim clone` does not carry them over: a clone comes up stock and has to be slimmed again with `simslim on`. The same goes for `erase`, `delete` and recreate, or "Erase All Content and Settings", so after any of those the simulator's memory climbs back to stock until you rerun `simslim on`. A simulator created from a new or updated runtime also starts stock. Copying the simulator's device directory does keep the disables, so a tar or a filesystem snapshot (how CI images are usually built) restores a slim simulator as slim. Run `simslim list` to see which simulators are currently slim.
+This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database and nowhere else. `simslim clone` does not carry them over: a clone comes up stock and has to be slimmed again with `simslim on`. The same goes for `erase`, `delete` and recreate, or "Erase All Content and Settings", so after any of those the simulator's memory climbs back to stock until you rerun `simslim on`. A simulator created from a new or updated runtime also starts stock. Copying the simulator's device directory does keep the disables, so a tar or a filesystem snapshot (how CI images are usually built) restores a slim simulator as slim. Run `simslim list` to see which simulators are currently slim, or `simslim verify` to check one against a specific profile.
 
 ## What you lose
 
