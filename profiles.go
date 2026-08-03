@@ -142,6 +142,10 @@ var Categories = []Category{
 			"com.apple.amsaccountsd",
 			"com.apple.amsengagementd",
 			"com.apple.amsondevicestoraged",
+			// Wallet hosts the payment authorization sheet and needs the
+			// Finance datastore; both shared with the other category.
+			"com.apple.passd",
+			"com.apple.financed",
 			"com.apple.videosubscriptionsd",
 			"com.apple.assetsubscriptiond",
 			"com.apple.musicd",
