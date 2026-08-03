@@ -265,6 +265,42 @@ func cmdStatus(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func cmdVerify(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	udid, err := oneUDID(cmd.Args().Slice())
+	if err != nil {
+		return err
+	}
+	p, err := simslim.BuildProfile(cmd.String("profile"), cmd.String("except"), cmd.String("keep"))
+	if err != nil {
+		return err
+	}
+	r, err := simslim.VerifyProfile(ctx, udid, p)
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		if err := writeJSON(r); err != nil {
+			return err
+		}
+	} else if r.OK {
+		fmt.Printf("%s matches the profile: all %d expected daemons disabled.\n", udid, len(p.Desired()))
+	} else {
+		fmt.Printf("%s does not match the profile (%d missing, %d extra):\n", udid, len(r.Missing), len(r.Extra))
+		for _, l := range r.Missing {
+			fmt.Printf("  missing %s (should be disabled, is enabled)\n", l)
+		}
+		for _, l := range r.Extra {
+			fmt.Printf("  extra   %s (disabled beyond the profile)\n", l)
+		}
+		fmt.Println("Re-run `simslim on` with the same profile to repair.")
+	}
+	if !r.OK {
+		os.Exit(1)
+	}
+	return nil
+}
+
 func cmdDoctor(ctx context.Context, cmd *cli.Command) error {
 	jsonOutput := cmd.Bool("json")
 	if cmd.Bool("list") {
@@ -857,6 +893,14 @@ COMMANDS
                        Return an initially shutdown simulator to shutdown
   status <udid>        Report how slim a booted simulator is
       --dropped        Also list the disabled daemons grouped by category
+  verify <udid>        Check that a booted simulator's disable overrides still
+                       match a profile exactly; exits non-zero and lists the
+                       drift otherwise. Catches a silently stock simulator (a
+                       clone, or a recreated device); re-run ` + "`on`" + ` to repair
+      --profile path   Verify against a committed JSON profile; mutually
+                       exclusive with --except/--keep
+      --except ids     The profile's enabled categories (comma-separated)
+      --keep labels    The profile's kept daemons (comma-separated)
   doctor <udid>        Check required features against a booted simulator;
                        exits non-zero if slimming has broken any of them
       --requires ids   Comma-separated feature IDs to verify

@@ -27,6 +27,12 @@ func newApp() *cli.Command {
 		{Name: "profiles", Flags: []cli.Flag{jsonFlag()}, Action: cmdProfiles},
 		{Name: "profile", Action: cmdNewProfile},
 		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled daemons grouped by category"}}, Action: cmdStatus},
+		{Name: "verify", Flags: []cli.Flag{
+			jsonFlag(),
+			&cli.StringFlag{Name: "profile", Usage: "verify against a JSON profile file (mutually exclusive with --except/--keep)"},
+			&cli.StringFlag{Name: "except", Usage: "comma-separated category IDs the profile leaves fully enabled (see `simslim profiles`)"},
+			&cli.StringFlag{Name: "keep", Usage: "comma-separated launchd labels the profile keeps running"},
+		}, Action: cmdVerify},
 		{Name: "doctor", Flags: []cli.Flag{
 			jsonFlag(),
 			&cli.StringFlag{Name: "requires", Usage: "comma-separated feature IDs the simulator must support (see `simslim doctor --list`)"},
