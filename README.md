@@ -265,6 +265,11 @@ CLI uses. macOS only, since everything runs through `xcrun simctl`.
 
 `simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.
 
+Older runtimes do not persist launchd overrides across a reboot (observed on
+iOS 17): `launchctl` accepts each disable, but the simulator comes back stock.
+`simslim on` reads the state back after its reboot and fails with a clear error
+instead of claiming success, so slimming requires an iOS 18 or newer runtime.
+
 This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database and nowhere else. `simslim clone` does not carry them over: a clone comes up stock and has to be slimmed again with `simslim on`. The same goes for `erase`, `delete` and recreate, or "Erase All Content and Settings", so after any of those the simulator's memory climbs back to stock until you rerun `simslim on`. A simulator created from a new or updated runtime also starts stock. Copying the simulator's device directory does keep the disables, so a tar or a filesystem snapshot (how CI images are usually built) restores a slim simulator as slim. Run `simslim list` to see which simulators are currently slim, or `simslim verify` to check one against a specific profile.
 
 ## What you lose

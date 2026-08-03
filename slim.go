@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // Reporter receives human-readable progress lines. A nil Reporter is a no-op,
@@ -51,7 +53,46 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 	if err := WaitShutdown(ctx, set, udid, ShutdownTimeout); err != nil {
 		return true, err
 	}
-	return true, BootAndWait(ctx, set, udid)
+	if err := BootAndWait(ctx, set, udid); err != nil {
+		return true, err
+	}
+	after, err := readDisabled(ctx, set, udid)
+	if err != nil {
+		return true, err
+	}
+	if lost := countLost(after, desired, managedSet()); lost > 0 {
+		return true, persistError(ctx, udid, lost, len(toDisable)+len(toEnable))
+	}
+	return true, nil
+}
+
+// countLost reports how many of the desired managed transitions are not
+// reflected in the state read back after the reboot.
+func countLost(after, desired, managed map[string]bool) int {
+	toDisable, toEnable := delta(after, desired, managed)
+	return len(toDisable) + len(toEnable)
+}
+
+// persistError explains that launchctl accepted the transitions but the
+// overrides were gone after the reboot. Older runtimes (observed on iOS 17)
+// do not persist launchd disable overrides across a reboot, so slimming
+// silently has no effect there; failing loudly beats claiming success.
+func persistError(ctx context.Context, udid string, lost, applied int) error {
+	msg := fmt.Sprintf("the disable overrides did not survive the reboot (%d of %d changes lost)", lost, applied)
+	if d, err := FindDevice(ctx, udid, ""); err == nil && osMajor(d.OSVersion) > 0 && osMajor(d.OSVersion) < 18 {
+		msg += fmt.Sprintf("; iOS %s runtimes do not persist launchd overrides — use an iOS 18 or newer runtime", d.OSVersion)
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+// osMajor extracts the major version from an OSVersion like "17.2" (0 when unknown).
+func osMajor(v string) int {
+	major, _, _ := strings.Cut(v, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // enableSlim disables the profile's daemons and boots the device slim.
