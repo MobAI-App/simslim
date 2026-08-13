@@ -17,9 +17,9 @@ type VerifyResult struct {
 
 // VerifyProfile checks, without mutating anything, that a booted simulator's
 // disable overrides match the profile exactly. The overrides are per-simulator
-// state that is easy to lose silently — a clone comes up stock, and so does a
-// deleted-and-recreated device — so VerifyProfile detects the drift and callers
-// can re-run `on` (which is idempotent) to repair it.
+// state that is easy to lose silently when a device is erased or recreated, so
+// VerifyProfile detects the drift and callers can re-run `on` (which is
+// idempotent) to repair it. SimSlim-created clones preserve this state.
 func VerifyProfile(ctx context.Context, udid string, p Profile) (VerifyResult, error) {
 	d, err := FindDevice(ctx, udid, "")
 	if err != nil {

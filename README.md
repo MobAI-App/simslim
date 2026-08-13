@@ -71,6 +71,7 @@ simslim size <udid>      # total allocated simulator size
 simslim disk-plan <udid> # measure reclaimable data; read-only
 simslim disk-clean --categories caches,logs --confirm <udid>
 simslim clone <udid> <name>
+simslim repair-clone <source-udid> <clone-udid>
 simslim rename <udid> <name>
 simslim boot <udid>      # boot a simulator and wait for its services
 simslim shutdown <udid>  # shut down a booted simulator
@@ -196,9 +197,9 @@ all. Both the check and the list support `--json`.
 ### Verifying a profile still holds
 
 The disable overrides are per-simulator state that is easy to lose without
-noticing: a `clone` comes up stock, so does a deleted-and-recreated device or a
-simulator from a new runtime, and nothing else fails loudly when that happens
-— the simulator just quietly runs heavy again. `verify` compares a booted
+noticing: a deleted-and-recreated device or a simulator from a new runtime
+comes up stock, and nothing else fails loudly when that happens — the simulator
+just quietly runs heavy again. `verify` compares a booted
 simulator's overrides against a profile — the same `--profile`/`--except`/`--keep`
 you passed to `on` — and exits non-zero listing the drift, so a script or CI
 step can catch it and re-run `simslim on` (idempotent: it only applies the
@@ -270,7 +271,32 @@ iOS 17): `launchctl` accepts each disable, but the simulator comes back stock.
 `simslim on` reads the state back after its reboot and fails with a clear error
 instead of claiming success, so slimming requires an iOS 18 or newer runtime.
 
-This is per-simulator state, not a global setting. The daemon disables live in that one simulator's launchd database and nowhere else. `simslim clone` does not carry them over: a clone comes up stock and has to be slimmed again with `simslim on`. The same goes for `erase`, `delete` and recreate, or "Erase All Content and Settings", so after any of those the simulator's memory climbs back to stock until you rerun `simslim on`. A simulator created from a new or updated runtime also starts stock. Copying the simulator's device directory does keep the disables, so a tar or a filesystem snapshot (how CI images are usually built) restores a slim simulator as slim. Run `simslim list` to see which simulators are currently slim, or `simslim verify` to check one against a specific profile.
+This is per-simulator state, not a global setting. The daemon disables live in
+that one simulator's launchd database and nowhere else. `simslim clone` copies
+the source's exact SimSlim-managed profile along with its installed apps, app
+data, and settings. It also rebases simulator-local symlinks, regenerates app
+registration databases, and clears copied system caches and temporary files so
+the clone cannot resolve app containers or writable state through the source.
+The clone finishes shutdown, and the source returns to the boot state it had
+before cloning.
+
+Clones created by an older SimSlim build can be repaired in place without
+deleting their installed apps or app data:
+
+```sh
+simslim repair-clone <source-udid> <clone-udid>
+```
+
+The repair preserves the clone's current SimSlim profile and boot state. The
+source is kept shutdown while copied paths are rebuilt; if repair cannot prove
+the clone independent, the clone stays shutdown instead of being restarted.
+
+`erase`, `delete` and recreate, and "Erase All Content and Settings" still
+produce stock service state, so the simulator's memory climbs back until you
+rerun `simslim on`. A simulator created from a new or updated runtime also
+starts stock. A tar or filesystem snapshot also preserves the profile. Run
+`simslim list` to see current state, or `simslim verify` to check one against a
+specific profile.
 
 ## What you lose
 

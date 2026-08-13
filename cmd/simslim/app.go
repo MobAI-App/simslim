@@ -50,6 +50,7 @@ func newApp() *cli.Command {
 			preserveBootStateFlag("reboot a simulator that was booted before cleanup"),
 		}, Action: cmdDiskClean},
 		{Name: "clone", Flags: []cli.Flag{jsonFlag()}, Action: cmdClone},
+		{Name: "repair-clone", Flags: []cli.Flag{jsonFlag()}, Action: cmdRepairClone},
 		{Name: "rename", Flags: []cli.Flag{jsonFlag()}, Action: cmdRename},
 		{Name: "boot", Flags: []cli.Flag{jsonFlag()}, Action: cmdBoot},
 		{Name: "shutdown", Flags: []cli.Flag{jsonFlag()}, Action: cmdShutdown},

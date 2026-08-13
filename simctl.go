@@ -236,40 +236,6 @@ func shutdownIfBooted(ctx context.Context, udid string) (set string, wasBooted b
 	return device.Set, true, nil
 }
 
-// cloneDevice temporarily shuts down a booted source because CoreSimulator can
-// only clone a stable device, then restores the source's original boot state.
-func CloneDevice(ctx context.Context, udid, name string) (newUDID string, err error) {
-	name, err = NormalizeSimulatorName(name)
-	if err != nil {
-		return "", err
-	}
-	set, wasBooted, err := shutdownIfBooted(ctx, udid)
-	if err != nil {
-		return "", err
-	}
-	if wasBooted {
-		defer func() {
-			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), BootTimeout)
-			defer cancel()
-			if restoreErr := BootAndWait(restoreCtx, set, udid); restoreErr != nil {
-				if err != nil {
-					err = fmt.Errorf("%v; additionally could not restore the source boot state: %w", err, restoreErr)
-				} else if newUDID != "" {
-					err = fmt.Errorf("cloned simulator %s, but could not restore the source boot state: %w", newUDID, restoreErr)
-				} else {
-					err = fmt.Errorf("could not restore the source boot state: %w", restoreErr)
-				}
-			}
-		}()
-	}
-
-	out, err := xcrun(ctx, simctlArgs(set, "clone", udid, name)...)
-	if err != nil {
-		return "", err
-	}
-	return parseClonedUDID(out)
-}
-
 func RenameDevice(ctx context.Context, udid, name string) error {
 	device, err := FindDevice(ctx, udid, "")
 	if err != nil {
