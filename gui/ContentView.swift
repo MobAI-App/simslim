@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
   @EnvironmentObject private var model: AppModel
   @State private var searchText = ""
+  @State private var searchIsExpanded = false
   @State private var managementSheet: SimulatorManagementSheet?
   @State private var slimmingMode: SlimmingMode = .memory
 
@@ -55,67 +56,56 @@ struct ContentView: View {
       .background(Color(nsColor: .windowBackgroundColor))
     }
     .toolbar {
-      ToolbarItemGroup(placement: .navigation) {
-        Button {
-          guard let device = singleSelectedDevice else { return }
-          managementSheet = .clone(device)
-        } label: {
-          Label("Clone Simulator", systemImage: "plus.square.on.square")
-        }
-        .disabled(singleSelectedDevice == nil || model.isBusy)
-        .help("Clone for backup or general-purpose use")
-
-        if slimmingMode == .memory {
+      if slimmingMode == .memory {
+        ToolbarItem(placement: .automatic) {
           Button {
             managementSheet = .slimmingRecommendation(model.selectedDevices)
           } label: {
-            Label("Apply Service Profile", systemImage: "circle")
+            ToolbarActionLabel("Slim", systemImage: "minus.circle")
           }
           .disabled(model.selectionCount == 0 || model.isBusy)
-          .help("Apply Service Profile")
+          .help("Apply the selected service profile")
+        }
 
+        ToolbarItem(placement: .automatic) {
           Button {
             Task { await model.restoreSelection() }
           } label: {
-            Label("Restore Original Services", systemImage: "arrow.uturn.backward.circle")
+            ToolbarActionLabel("Unslim", systemImage: "plus.circle")
           }
           .disabled(model.selectionCount == 0 || model.isBusy)
-          .help("Restore Original Services")
-        } else {
+          .help("Restore all SimSlim-managed services")
+        }
+      } else {
+        ToolbarItem(placement: .automatic) {
           Button(role: .destructive) {
             managementSheet = .diskCleanup(model.selectedDevices, selectedCleanableDiskCategories)
           } label: {
-            Label("Clean Disk Data", systemImage: "externaldrive.badge.xmark")
+            ToolbarActionLabel("Clean Disk", systemImage: "externaldrive.badge.xmark")
           }
           .disabled(!model.canCleanDiskSelection || model.isBusy)
           .help("Permanently clean the selected disk categories")
         }
       }
 
-      ToolbarItem(placement: .principal) {
-        ToolbarSimulatorSearch(text: $searchText)
+      if #available(macOS 26.0, *) {
+        ToolbarSpacer(.flexible)
       }
 
-      ToolbarItemGroup(placement: .primaryAction) {
+      ToolbarItemGroup(placement: .automatic) {
         Button {
           guard let device = singleSelectedDevice else { return }
-          managementSheet = .rename(device)
+          managementSheet = .clone(device)
         } label: {
-          Label("Rename Simulator", systemImage: "pencil")
+          ToolbarActionLabel("Clone", systemImage: "plus.square.on.square")
         }
         .disabled(singleSelectedDevice == nil || model.isBusy)
-        .help("Rename Simulator")
-      }
+        .help("Clone for backup or general-purpose use")
 
-      if #available(macOS 26.0, *) {
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-      }
-
-      ToolbarItemGroup(placement: .primaryAction) {
         Button(role: .destructive) {
           managementSheet = .erase(model.selectedDevices)
         } label: {
-          Label("Erase Simulator", systemImage: "eraser")
+          ToolbarActionLabel("Erase", systemImage: "eraser")
         }
         .disabled(model.selectionCount == 0 || model.isBusy)
         .help("Erase Simulator")
@@ -123,21 +113,58 @@ struct ContentView: View {
         Button(role: .destructive) {
           managementSheet = .delete(model.selectedDevices)
         } label: {
-          Label("Delete Simulator", systemImage: "trash")
+          ToolbarActionLabel("Delete", systemImage: "trash")
         }
         .disabled(model.selectionCount == 0 || model.isBusy)
         .help("Delete Simulator")
       }
 
       if #available(macOS 26.0, *) {
-        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarSpacer(.flexible)
       }
 
-      ToolbarItemGroup(placement: .primaryAction) {
+      ToolbarItemGroup(placement: .automatic) {
+        Button {
+          guard let device = singleSelectedDevice else { return }
+          Task { await model.bootSimulator(device) }
+        } label: {
+          ToolbarActionLabel("Boot", systemImage: "play.fill")
+        }
+        .disabled(
+          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == true || model.isBusy
+        )
+        .help("Boot Simulator")
+
+        Button {
+          guard let device = singleSelectedDevice else { return }
+          Task { await model.shutdownSimulator(device) }
+        } label: {
+          ToolbarActionLabel("Kill", systemImage: "stop.fill")
+        }
+        .disabled(
+          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == false || model.isBusy
+        )
+        .help("Shut Down Simulator")
+
+        Button {
+          guard let device = singleSelectedDevice else { return }
+          managementSheet = .rename(device)
+        } label: {
+          ToolbarActionLabel("Rename", systemImage: "pencil")
+        }
+        .disabled(singleSelectedDevice == nil || model.isBusy)
+        .help("Rename Simulator")
+      }
+
+      if #available(macOS 26.0, *) {
+        ToolbarSpacer(.flexible)
+      }
+
+      ToolbarItemGroup(placement: .automatic) {
         Button {
           Task { await model.refresh() }
         } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
+          ToolbarActionLabel("Refresh", systemImage: "arrow.clockwise")
         }
         .disabled(model.isBusy)
         .help("Refresh simulator status")
@@ -148,9 +175,21 @@ struct ContentView: View {
           Button("Clear Selection") { model.clearSelection() }
             .disabled(model.selectionCount == 0)
         } label: {
-          Label("Selection", systemImage: "checklist")
+          ToolbarActionLabel("Selection", systemImage: "checklist")
         }
         .disabled(model.isBusy)
+      }
+
+      if #available(macOS 26.0, *) {
+        ToolbarSpacer(.flexible)
+      }
+
+      ToolbarItem(placement: .automatic) {
+        CollapsibleToolbarSearch(
+          text: $searchText,
+          prompt: "Find a simulator",
+          isExpanded: $searchIsExpanded
+        )
       }
     }
     .sheet(item: $managementSheet) { sheet in
@@ -400,19 +439,52 @@ struct ContentView: View {
   }
 }
 
-private struct ToolbarSimulatorSearch: View {
-  @Binding var text: String
+private struct ToolbarActionLabel: View {
+  let title: String
+  let systemImage: String
+
+  init(_ title: String, systemImage: String) {
+    self.title = title
+    self.systemImage = systemImage
+  }
 
   var body: some View {
-    if #available(macOS 26.0, *) {
-      searchContent
-        .padding(.horizontal, 10)
-        .frame(width: 360, height: 32)
+    Label(title, systemImage: systemImage)
+      .accessibilityLabel(title)
+  }
+}
+
+private struct CollapsibleToolbarSearch: View {
+  @Binding var text: String
+  let prompt: String
+  @Binding var isExpanded: Bool
+
+  @ViewBuilder
+  var body: some View {
+    if isExpanded {
+      if #available(macOS 26.0, *) {
+        searchContent
+          .padding(.horizontal, 10)
+          .frame(width: 300, height: 32)
+      } else {
+        searchContent
+          .padding(.horizontal, 10)
+          .frame(width: 280, height: 30)
+          .background(.regularMaterial, in: Capsule())
+      }
     } else {
-      searchContent
-        .padding(.horizontal, 10)
-        .frame(width: 300, height: 30)
-        .background(.regularMaterial, in: Capsule())
+      Button {
+        withAnimation(.easeInOut(duration: 0.16)) {
+          isExpanded = true
+        }
+      } label: {
+        ToolbarActionLabel(
+          "Search",
+          systemImage: text.isEmpty ? "magnifyingglass" : "magnifyingglass.circle.fill"
+        )
+      }
+      .help(text.isEmpty ? prompt : "\(prompt) — filter active")
+      .accessibilityLabel(text.isEmpty ? prompt : "\(prompt), filter active")
     }
   }
 
@@ -421,9 +493,17 @@ private struct ToolbarSimulatorSearch: View {
       Image(systemName: "magnifyingglass")
         .foregroundStyle(.secondary)
 
-      TextField("Find a simulator", text: $text)
-        .textFieldStyle(.plain)
-        .accessibilityLabel("Find a simulator")
+      AutofocusingToolbarTextField(
+        text: $text,
+        prompt: prompt,
+        onSubmit: {
+          if text.isEmpty {
+            collapse()
+          }
+        },
+        onCancel: collapse
+      )
+      .frame(maxWidth: .infinity)
 
       if !text.isEmpty {
         Button {
@@ -433,8 +513,106 @@ private struct ToolbarSimulatorSearch: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
-        .help("Clear simulator search")
+        .help("Clear search")
       }
+
+      Button {
+        collapse()
+      } label: {
+        Image(systemName: "chevron.right")
+          .foregroundStyle(.secondary)
+      }
+      .buttonStyle(.plain)
+      .help("Collapse search")
+      .accessibilityLabel("Collapse search")
+    }
+    .onExitCommand(perform: collapse)
+  }
+
+  private func collapse() {
+    withAnimation(.easeInOut(duration: 0.16)) {
+      isExpanded = false
+    }
+  }
+}
+
+private struct AutofocusingToolbarTextField: NSViewRepresentable {
+  @Binding var text: String
+  let prompt: String
+  let onSubmit: () -> Void
+  let onCancel: () -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(parent: self)
+  }
+
+  func makeNSView(context: Context) -> AutofocusingTextField {
+    let textField = AutofocusingTextField()
+    textField.delegate = context.coordinator
+    textField.stringValue = text
+    textField.placeholderString = prompt
+    textField.isBezeled = false
+    textField.drawsBackground = false
+    textField.focusRingType = .none
+    textField.usesSingleLineMode = true
+    textField.lineBreakMode = .byTruncatingTail
+    textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    textField.setAccessibilityLabel(prompt)
+    return textField
+  }
+
+  func updateNSView(_ textField: AutofocusingTextField, context: Context) {
+    context.coordinator.parent = self
+    if textField.stringValue != text {
+      textField.stringValue = text
+    }
+    textField.placeholderString = prompt
+    textField.setAccessibilityLabel(prompt)
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var parent: AutofocusingToolbarTextField
+
+    init(parent: AutofocusingToolbarTextField) {
+      self.parent = parent
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+      guard let textField = notification.object as? NSTextField else { return }
+      if parent.text != textField.stringValue {
+        parent.text = textField.stringValue
+      }
+    }
+
+    func control(
+      _ control: NSControl,
+      textView: NSTextView,
+      doCommandBy commandSelector: Selector
+    ) -> Bool {
+      if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        parent.onSubmit()
+        return true
+      }
+      if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+        parent.onCancel()
+        return true
+      }
+      return false
+    }
+  }
+}
+
+private final class AutofocusingTextField: NSTextField {
+  private var hasRequestedFocus = false
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    guard window != nil, !hasRequestedFocus else { return }
+    hasRequestedFocus = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.window?.makeFirstResponder(self)
     }
   }
 }
@@ -1164,13 +1342,13 @@ private struct SimulatorRow: View {
             Button {
               managementSheet = .slimmingRecommendation([device])
             } label: {
-              Label("Apply Service Profile", systemImage: "circle")
+              Label("Slim Simulator", systemImage: "minus.circle")
             }
 
             Button {
               Task { await model.restoreOriginalServices(for: device) }
             } label: {
-              Label("Restore Original Services", systemImage: "arrow.uturn.backward.circle")
+              Label("Unslim Simulator", systemImage: "plus.circle")
             }
           }
 
