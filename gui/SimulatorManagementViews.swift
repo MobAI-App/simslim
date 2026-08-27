@@ -57,7 +57,7 @@ struct SlimmingRecommendationSheet: View {
         Label("Backup or general-purpose simulator", systemImage: "externaldrive.badge.timemachine")
           .font(.subheadline.weight(.semibold))
         Text(
-          "The clone is an independent simulator. Keep it as a point-in-time backup, or continue using it normally for development and testing."
+          "The clone keeps the same apps, data, settings, and current service profile. SimSlim rebuilds simulator-local links and registrations so it is ready for separate use as a point-in-time backup or development simulator."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -374,7 +374,7 @@ struct DiskCleanupConfirmationSheet: View {
         Label("Recommended: clone before cleaning", systemImage: "plus.square.on.square")
           .font(.subheadline.weight(.semibold))
         Text(
-          "A clone preserves the simulator’s current apps, data, and settings before this permanent cleanup. It can be kept as a backup or used as a normal simulator."
+          "A clone preserves the simulator’s current apps, data, settings, and service profile before this permanent cleanup. It can be kept as a backup or used as a normal simulator."
         )
         .font(.caption)
         .foregroundStyle(.secondary)

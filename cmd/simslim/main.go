@@ -554,7 +554,7 @@ func cmdClone(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	tctx, cancel := context.WithTimeout(ctx, simslim.BootTimeout)
+	tctx, cancel := context.WithTimeout(ctx, simslim.CloneOperationTimeout())
 	defer cancel()
 	newUDID, err := simslim.CloneDevice(tctx, args[0], name)
 	if err != nil {
@@ -565,6 +565,34 @@ func cmdClone(ctx context.Context, cmd *cli.Command) error {
 		return writeJSON(result)
 	}
 	fmt.Printf("Cloned %s as %q (%s).\n", args[0], name, newUDID)
+	return nil
+}
+
+func cmdRepairClone(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	args := cmd.Args().Slice()
+	if len(args) != 2 {
+		return fmt.Errorf("repair-clone expects the source UDID and cloned simulator UDID")
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, simslim.CloneOperationTimeout())
+	defer cancel()
+	if err := simslim.RepairClonedDevice(tctx, args[0], args[1]); err != nil {
+		return err
+	}
+	result := simslim.SimulatorMutationOutput{
+		Action:     "repair-clone",
+		UDID:       args[1],
+		SourceUDID: args[0],
+	}
+	if jsonOutput {
+		return writeJSON(result)
+	}
+	fmt.Printf(
+		"Repaired clone %s and verified no links or open files into specified source %s.\n",
+		args[1],
+		args[0],
+	)
 	return nil
 }
 
@@ -895,8 +923,8 @@ COMMANDS
       --dropped        Also list the disabled daemons grouped by category
   verify <udid>        Check that a booted simulator's disable overrides still
                        match a profile exactly; exits non-zero and lists the
-                       drift otherwise. Catches a silently stock simulator (a
-                       clone, or a recreated device); re-run ` + "`on`" + ` to repair
+                       drift otherwise. Catches a silently stock recreated or
+                       erased device; re-run ` + "`on`" + ` to repair
       --profile path   Verify against a committed JSON profile; mutually
                        exclusive with --except/--keep
       --except ids     The profile's enabled categories (comma-separated)
@@ -918,7 +946,9 @@ COMMANDS
       --confirm        Required acknowledgement of permanent deletion
       --preserve-boot-state
                        Reboot a simulator that was booted before cleanup
-  clone <udid> <name>  Clone a simulator, preserving its current boot state
+  clone <udid> <name>  Clone apps, data, settings, and the service profile
+  repair-clone <source-udid> <clone-udid>
+                       Repair source-bound state in an existing clone
   rename <udid> <name> Rename a simulator
   boot <udid>          Boot a simulator and wait for its services
   shutdown <udid>      Shut down a booted simulator

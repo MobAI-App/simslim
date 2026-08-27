@@ -366,7 +366,7 @@ final class AppModel: ObservableObject {
   func cloneSimulator(_ device: SimulatorDevice, named rawName: String) async {
     guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-    setOperation("Cloning simulator…", for: device.udid)
+    setOperation("Cloning apps, data, and service profile…", for: device.udid)
     record(.info, "Cloning \(device.name) as \(name)")
     defer { clearOperation(for: device.udid) }
 
@@ -376,7 +376,9 @@ final class AppModel: ObservableObject {
         setCachedDisabled(disabled, for: result.udid)
       }
       measurements.removeValue(forKey: result.udid)
-      record(.success, "Cloned \(device.name) as \(result.name ?? name)")
+      record(
+        .success,
+        "Cloned \(device.name) as \(result.name ?? name), including its service profile")
       selectedUDIDs = [result.udid]
       await refresh()
     } catch {

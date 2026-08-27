@@ -386,7 +386,7 @@ struct ContentView: View {
         actionTitle: "Clone Simulator",
         systemImage: "plus.square.on.square",
         explanation:
-          "The clone keeps the source simulator’s apps, data, and settings. It does not keep the service profile: a clone starts stock and has to be slimmed again. Use it as a point-in-time backup before slimming or as an independent simulator for general development and testing. A booted source is briefly shut down and then returned to its original boot state.",
+          "The clone copies the source simulator’s apps, data, settings, and current SimSlim service profile. SimSlim rebases simulator-local links, rebuilds generated app registrations, and audits the running clone for open paths into the source. SimSlim may briefly boot a shutdown source to read its profile, or briefly shut down a booted source to make the copy. The source returns to its original boot state, and the clone finishes shutdown.",
         initialName: "\(device.name) Copy",
         device: device
       ) { name in

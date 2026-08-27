@@ -1,6 +1,8 @@
 package simslim
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,5 +74,73 @@ func TestParseClonedUDID(t *testing.T) {
 		if _, err := parseClonedUDID([]byte(invalid)); err == nil {
 			t.Errorf("parseClonedUDID(%q) unexpectedly succeeded", invalid)
 		}
+	}
+}
+
+func TestResetClonedLaunchServicesAt(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	lsdDirectory := filepath.Join(dataDirectory, "var", "db", "lsd")
+	if err := os.MkdirAll(lsdDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	removed := []string{
+		"com.apple.LaunchServices-20971544-v2.csstore",
+		"com.apple.LaunchServices-20971544-v2.csstore-shm",
+		"com.apple.LaunchServices-20971544-v2.csstore-wal",
+	}
+	preserved := []string{
+		"SystemDataOnly-com.apple.LaunchServices-20971544-v2.csstore",
+		"com.apple.LaunchServicesAppProtectionStore.plist",
+		"unrelated.db",
+	}
+	for _, name := range append(append([]string{}, removed...), preserved...) {
+		if err := os.WriteFile(filepath.Join(lsdDirectory, name), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := resetClonedLaunchServicesAt(dataDirectory); err != nil {
+		t.Fatalf("resetClonedLaunchServicesAt() error = %v", err)
+	}
+	for _, name := range removed {
+		if _, err := os.Stat(filepath.Join(lsdDirectory, name)); !os.IsNotExist(err) {
+			t.Errorf("generated store %q still exists; stat error = %v", name, err)
+		}
+	}
+	for _, name := range preserved {
+		if _, err := os.Stat(filepath.Join(lsdDirectory, name)); err != nil {
+			t.Errorf("unrelated file %q was not preserved: %v", name, err)
+		}
+	}
+}
+
+func TestResetClonedLaunchServicesAtAllowsMissingStore(t *testing.T) {
+	dataDirectory := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(dataDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := resetClonedLaunchServicesAt(dataDirectory); err != nil {
+		t.Fatalf("resetClonedLaunchServicesAt() error = %v", err)
+	}
+}
+
+func TestResetClonedLaunchServicesAtRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	dataDirectory := filepath.Join(root, "data")
+	externalDirectory := filepath.Join(root, "external")
+	if err := os.MkdirAll(filepath.Join(dataDirectory, "var", "db"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(externalDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(externalDirectory, filepath.Join(dataDirectory, "var", "db", "lsd")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := resetClonedLaunchServicesAt(dataDirectory)
+	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("resetClonedLaunchServicesAt() error = %v, want symlink rejection", err)
 	}
 }
