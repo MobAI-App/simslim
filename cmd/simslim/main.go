@@ -588,7 +588,11 @@ func cmdRepairClone(ctx context.Context, cmd *cli.Command) error {
 	if jsonOutput {
 		return writeJSON(result)
 	}
-	fmt.Printf("Repaired clone %s so it no longer references source %s.\n", args[1], args[0])
+	fmt.Printf(
+		"Repaired clone %s and verified no links or open files into specified source %s.\n",
+		args[1],
+		args[0],
+	)
 	return nil
 }
 

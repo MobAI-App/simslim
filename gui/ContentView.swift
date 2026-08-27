@@ -386,7 +386,7 @@ struct ContentView: View {
         actionTitle: "Clone Simulator",
         systemImage: "plus.square.on.square",
         explanation:
-          "The clone is an independent copy of the source simulator’s apps, data, settings, and current SimSlim service profile. Simulator-local links and generated app registrations are rebuilt for the new device so it cannot use the source simulator’s containers. SimSlim may briefly boot a shutdown source to read its profile, or briefly shut down a booted source to make the copy. The source returns to its original boot state, and the clone finishes shutdown.",
+          "The clone copies the source simulator’s apps, data, settings, and current SimSlim service profile. SimSlim rebases simulator-local links, rebuilds generated app registrations, and audits the running clone for open paths into the source. SimSlim may briefly boot a shutdown source to read its profile, or briefly shut down a booted source to make the copy. The source returns to its original boot state, and the clone finishes shutdown.",
         initialName: "\(device.name) Copy",
         device: device
       ) { name in

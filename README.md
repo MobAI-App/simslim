@@ -275,10 +275,10 @@ This is per-simulator state, not a global setting. The daemon disables live in
 that one simulator's launchd database and nowhere else. `simslim clone` copies
 the source's exact SimSlim-managed profile along with its installed apps, app
 data, and settings. It also rebases simulator-local symlinks, regenerates app
-registration databases, and clears copied system caches and temporary files so
-the clone cannot resolve app containers or writable state through the source.
-The clone finishes shutdown, and the source returns to the boot state it had
-before cloning.
+registration databases, and clears copied system caches and temporary files.
+Before finishing, it boots the clone and audits its running processes for open
+paths into the source. The clone finishes shutdown, and the source returns to
+the boot state it had before cloning.
 
 Clones created by an older SimSlim build can be repaired in place without
 deleting their installed apps or app data:
@@ -288,8 +288,10 @@ simslim repair-clone <source-udid> <clone-udid>
 ```
 
 The repair preserves the clone's current SimSlim profile and boot state. The
-source is kept shutdown while copied paths are rebuilt; if repair cannot prove
-the clone independent, the clone stays shutdown instead of being restarted.
+source is kept shutdown while copied paths are rebuilt; if direct links or open
+files into that source remain, the clone stays shutdown instead of being
+restarted. CoreSimulator does not expose clone lineage, so pass the exact source
+UDID: SimSlim verifies references to the source you specify.
 
 `erase`, `delete` and recreate, and "Erase All Content and Settings" still
 produce stock service state, so the simulator's memory climbs back until you

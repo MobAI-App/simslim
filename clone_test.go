@@ -1,6 +1,7 @@
 package simslim
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,7 @@ func TestDesiredCloneDisabledKeepsOnlySlimmableServices(t *testing.T) {
 	}
 }
 
-func TestSanitizeClonedDeviceAtMakesCloneIndependent(t *testing.T) {
+func TestSanitizeClonedDeviceAtRebasesDirectLinks(t *testing.T) {
 	paths := newTestCloneFilesystem(t)
 
 	trialSource := filepath.Join(paths.sourceDataDirectory, "Library", "Trial", "shared-state")
@@ -86,6 +87,32 @@ func TestSanitizeClonedDeviceAtMakesCloneIndependent(t *testing.T) {
 	for _, name := range []string{"applicationState.db", "applicationState.db-shm", "applicationState.db-wal"} {
 		writeCloneTestFile(t, filepath.Join(frontBoardDirectory, name), "stale paths")
 	}
+	generatedStateDirectories := []string{
+		filepath.Join(paths.cloneDataDirectory, "Library", "AppleMediaServices", "Engagement", "internal", "database"),
+		filepath.Join(paths.cloneDataDirectory, "Library", "Spotlight"),
+		filepath.Join(paths.cloneDataDirectory, "Library", "chronod", "replicator"),
+		filepath.Join(paths.cloneDataDirectory, "Library", "com.apple.nsurlsessiond"),
+		filepath.Join(paths.cloneDataDirectory, "private", "var", "MobileAsset", "AssetsV2", "locks"),
+		filepath.Join(paths.cloneDataDirectory, "private", "var", "MobileAsset", "AssetsV2", "persisted"),
+		filepath.Join(paths.cloneDataDirectory, "private", "var", "db", "assetsubscriptiond", "history"),
+		filepath.Join(paths.cloneDataDirectory, "var", "db", "diagnostics", "Persist"),
+		filepath.Join(paths.cloneDataDirectory, "var", "db", "diagnostics", "Special"),
+		filepath.Join(paths.cloneDataDirectory, "Containers", "Shared", "AppGroup", "SYSTEM", "replicatord"),
+	}
+	for _, directory := range generatedStateDirectories {
+		writeCloneTestFile(t, filepath.Join(directory, "copied-state.db"), "file://"+trialSource)
+	}
+	downloadedAsset := filepath.Join(
+		paths.cloneDataDirectory,
+		"private",
+		"var",
+		"MobileAsset",
+		"AssetsV2",
+		"com_apple_MobileAsset_Test",
+		"AssetData",
+		"model.bin",
+	)
+	writeCloneTestFile(t, downloadedAsset, "downloaded payload")
 
 	writeCloneTestFile(t, filepath.Join(paths.cloneDataDirectory, "Library", "Caches", "system.cache"), "discard")
 	writeCloneTestFile(t, filepath.Join(paths.cloneDataDirectory, "tmp", "snapshot"), "discard")
@@ -126,6 +153,10 @@ func TestSanitizeClonedDeviceAtMakesCloneIndependent(t *testing.T) {
 	for _, name := range []string{"applicationState.db", "applicationState.db-shm", "applicationState.db-wal"} {
 		assertMissing(t, filepath.Join(frontBoardDirectory, name))
 	}
+	for _, directory := range generatedStateDirectories {
+		assertDirectoryEmpty(t, directory)
+	}
+	assertExists(t, downloadedAsset)
 	assertDirectoryEmpty(t, filepath.Join(paths.cloneDataDirectory, "Library", "Caches"))
 	assertDirectoryEmpty(t, filepath.Join(paths.cloneDataDirectory, "tmp"))
 	preferenceContents, err := os.ReadFile(springBoardPreference)
@@ -191,6 +222,44 @@ func TestSourceReferencesFromLsof(t *testing.T) {
 	got := sourceReferencesFromLsof(output, paths)
 	if len(got) != 1 || got[0].pid != 100 || !strings.Contains(got[0].path, testSourceUDID) {
 		t.Fatalf("sourceReferencesFromLsof() = %v, want one PID 100 source path", got)
+	}
+}
+
+func TestEvaluateCloneLsofAuditAcceptsLiveRecordsWhenAnotherPIDExited(t *testing.T) {
+	paths := newTestCloneFilesystem(t)
+	output := strings.Join([]string{
+		"p100",
+		"fcwd",
+		"n" + paths.cloneDataDirectory,
+		"",
+	}, "\n")
+
+	complete, err := evaluateCloneLsofAudit(output, errors.New("exit status 1"), paths)
+	if !complete || err != nil {
+		t.Fatalf("evaluateCloneLsofAudit() = (%t, %v), want complete success", complete, err)
+	}
+}
+
+func TestEvaluateCloneLsofAuditRetriesWhenAllSnapshottedPIDsExited(t *testing.T) {
+	paths := newTestCloneFilesystem(t)
+	complete, err := evaluateCloneLsofAudit("", errors.New("exit status 1"), paths)
+	if complete || err == nil {
+		t.Fatalf("evaluateCloneLsofAudit() = (%t, %v), want incomplete error", complete, err)
+	}
+}
+
+func TestEvaluateCloneLsofAuditRejectsSourceReferenceDespiteExitError(t *testing.T) {
+	paths := newTestCloneFilesystem(t)
+	output := strings.Join([]string{
+		"p100",
+		"fcwd",
+		"n" + filepath.Join(paths.sourceDataDirectory, "Library", "linked.db"),
+		"",
+	}, "\n")
+
+	complete, err := evaluateCloneLsofAudit(output, errors.New("exit status 1"), paths)
+	if !complete || err == nil || !strings.Contains(err.Error(), "source simulator path") {
+		t.Fatalf("evaluateCloneLsofAudit() = (%t, %v), want complete source-path error", complete, err)
 	}
 }
 

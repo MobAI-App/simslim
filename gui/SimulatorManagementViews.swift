@@ -57,7 +57,7 @@ struct SlimmingRecommendationSheet: View {
         Label("Backup or general-purpose simulator", systemImage: "externaldrive.badge.timemachine")
           .font(.subheadline.weight(.semibold))
         Text(
-          "The clone is an independent simulator with the same apps, data, settings, and current service profile. Keep it as a point-in-time backup, or use it normally for development and testing."
+          "The clone keeps the same apps, data, settings, and current service profile. SimSlim rebuilds simulator-local links and registrations so it is ready for separate use as a point-in-time backup or development simulator."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
