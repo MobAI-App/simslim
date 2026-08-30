@@ -81,6 +81,45 @@ simslim delete <udid>    # permanently delete a simulator
 Read-only and simulator-management commands accept `--json` for integrations
 and the macOS app.
 
+Keep a category you actually need, like Spotlight search:
+
+```sh
+simslim on <udid> --except search
+```
+
+Or keep one specific daemon, like push notifications:
+
+```sh
+simslim on <udid> --keep com.apple.apsd
+```
+
+<details>
+<summary>All slimming categories</summary>
+
+| ID | Category | Turns off | ~MB |
+|---|---|---|---|
+| `widgets` | Widgets & Wallpaper | Home and lock screen posters, widgets, and Live Activities. | 675 |
+| `siri` | Siri & Intelligence | Siri, Apple Intelligence, speech, and on-device ML model services. | 265 |
+| `search` | Spotlight & Search | On-device Spotlight and in-Settings search services. | 50 |
+| `icloud` | iCloud & Apple Account | iCloud sync, Apple Account, keychain, and backup services. | 100 |
+| `store` | App Store, Push & Media | App Store, push notification, StoreKit, and media services. | 80 |
+| `pim` | Mail, Calendar & Contacts | Mail, Calendar, Contacts, Reminders, and related sync services. | 80 |
+| `web` | Safari Sync & Web Services | Safari sync, web push, privacy, and universal-link services. | 50 |
+| `family` | Family & Screen Time | Family Sharing, Screen Time, and usage tracking. | 65 |
+| `health` | Health, Home & Fitness | HealthKit, HomeKit, and Fitness services. | 135 |
+| `photos` | Photos & Media Analysis | Photos library, photo analysis, and media analysis services. | 60 |
+| `apps` | News, Weather, Maps & Games | News, Weather, Maps, Tips, and game services. | 90 |
+| `messaging` | Messaging & FaceTime | iMessage, FaceTime, call, and identity services. | 60 |
+| `connectivity` | Sharing & Device Connectivity | AirDrop, Continuity, CarPlay, Watch, and Find My services. | 65 |
+| `telemetry` | Ads, Diagnostics & Telemetry | DeviceCheck, ad privacy, analytics, diagnostics, and feedback services. | 105 |
+| `other` | Other Background Services | Wallet, business services, assets, and miscellaneous background daemons. | 195 |
+
+Memory figures are iOS 26.5 clean-boot medians and are not additive; see the
+[measurement method](docs/category-memory.md). Run `simslim profiles <id>` to
+see the daemons in a category.
+
+</details>
+
 ### Slow CI runners
 
 `simslim on` boots the simulator, disables ~170 daemons one `launchctl` call at a
@@ -104,42 +143,6 @@ hosts (failed ones are retried automatically). Raise it with the global
 simslim on <udid> --spawn-timeout 5m
 # or, for the whole job:
 export SIMSLIM_SPAWN_TIMEOUT=5m
-```
-
-## Disk cleanup
-
-Disk cleanup is permanent and separate from service slimming. `disk-plan` is
-read-only. `disk-clean` shuts down the exact simulator, clears only allowlisted
-per-device directories, and refuses to run without `--confirm`.
-
-```sh
-simslim disk-categories
-simslim disk-plan <udid>
-simslim disk-clean --categories caches,logs,temporary --confirm <udid>
-# Optional: also remove on-demand language models
-simslim disk-clean --categories linguistic-data --confirm <udid>
-```
-
-Built-in apps and core OS language resources are part of a signed iOS runtime
-shared by every simulator using that version, so simslim never modifies them.
-Required Siri assets are measured only because iOS restores them on launch;
-on-demand language data is opt-in and may download again when needed.
-
-`disk-plan` also reports a read-only storage breakdown for installed app bundles,
-Documents, app data, and user media. Those durable rows are never eligible for
-cleanup. See the [disk cleanup safety model](docs/disk-cleanup.md) for recovery
-behavior, safeguards, and Xcode 26.6 validation results.
-
-Keep a category you actually need, like Spotlight search:
-
-```sh
-simslim on <udid> --except search
-```
-
-Or keep one specific daemon, like push notifications:
-
-```sh
-simslim on <udid> --keep com.apple.apsd
 ```
 
 ### Profile files
@@ -211,6 +214,30 @@ simslim verify <udid> --profile ci.json || simslim on <udid> --profile ci.json
 Where `doctor` answers "do the features my tests need still work?", `verify`
 answers "is this simulator in exactly the slim state I configured?". Supports
 `--json`.
+
+## Disk cleanup
+
+Disk cleanup is permanent and separate from service slimming. `disk-plan` is
+read-only. `disk-clean` shuts down the exact simulator, clears only allowlisted
+per-device directories, and refuses to run without `--confirm`.
+
+```sh
+simslim disk-categories
+simslim disk-plan <udid>
+simslim disk-clean --categories caches,logs,temporary --confirm <udid>
+# Optional: also remove on-demand language models
+simslim disk-clean --categories linguistic-data --confirm <udid>
+```
+
+Built-in apps and core OS language resources are part of a signed iOS runtime
+shared by every simulator using that version, so simslim never modifies them.
+Required Siri assets are measured only because iOS restores them on launch;
+on-demand language data is opt-in and may download again when needed.
+
+`disk-plan` also reports a read-only storage breakdown for installed app bundles,
+Documents, app data, and user media. Those durable rows are never eligible for
+cleanup. See the [disk cleanup safety model](docs/disk-cleanup.md) for recovery
+behavior, safeguards, and Xcode 26.6 validation results.
 
 ## Use as a Go library
 
