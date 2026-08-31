@@ -1,6 +1,7 @@
 package simslim
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,61 @@ func TestParseBatchOK(t *testing.T) {
 		if !got[label] {
 			t.Errorf("parseBatchOK() missing %q", label)
 		}
+	}
+}
+
+func TestFormatListError(t *testing.T) {
+	exit72 := errors.New("exit status 72")
+	tests := []struct {
+		name    string
+		stderr  string
+		want    []string
+		wantNot []string
+	}{
+		{
+			name:    "no stderr keeps the bare error",
+			stderr:  "",
+			want:    []string{"simctl list: exit status 72"},
+			wantNot: []string{"xcode-select"},
+		},
+		{
+			name:    "whitespace-only stderr keeps the bare error",
+			stderr:  "  \n",
+			want:    []string{"simctl list: exit status 72"},
+			wantNot: []string{"xcode-select"},
+		},
+		{
+			name:   "stderr is appended",
+			stderr: "An error was encountered processing the command\n",
+			want:   []string{"simctl list: exit status 72: An error was encountered processing the command"},
+		},
+		{
+			name:   "missing simctl adds the xcode-select hint",
+			stderr: `xcrun: error: unable to find utility "simctl", not a developer tool or in PATH`,
+			want: []string{
+				`unable to find utility "simctl"`,
+				"sudo xcode-select -s",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatListError(exit72, tt.stderr).Error()
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("formatListError() = %q, missing %q", got, want)
+				}
+			}
+			for _, wantNot := range tt.wantNot {
+				if strings.Contains(got, wantNot) {
+					t.Errorf("formatListError() = %q, should not contain %q", got, wantNot)
+				}
+			}
+			if !errors.Is(formatListError(exit72, tt.stderr), exit72) {
+				t.Errorf("formatListError() does not wrap the original error")
+			}
+		})
 	}
 }
 
