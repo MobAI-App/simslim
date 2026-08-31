@@ -49,3 +49,17 @@ func TestParsePS(t *testing.T) {
 		t.Errorf("header row was parsed as a process")
 	}
 }
+
+func TestParseBytes(t *testing.T) {
+	tests := map[string]int64{
+		"512B":  512,
+		"8K":    8 << 10,
+		"823M":  823 << 20,
+		"1.5G+": 3 << 29,
+	}
+	for input, want := range tests {
+		if got := parseBytes(input); got != want {
+			t.Errorf("parseBytes(%q) = %d, want %d", input, got, want)
+		}
+	}
+}

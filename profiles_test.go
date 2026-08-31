@@ -37,6 +37,26 @@ func TestManagedExcludesForbidden(t *testing.T) {
 	}
 }
 
+// These are the launchd or bundle identifiers behind the live processes cited
+// in issue #30. None is part of a full slim profile: required and unsafe
+// services stay up, and system apps/extensions are not managed launchd labels.
+func TestFullProfileDoesNotClaimUnmanagedProcesses(t *testing.T) {
+	desired := (Profile{}).Desired()
+	for _, label := range []string{
+		"com.apple.routined",
+		"com.apple.sharingd",
+		"com.apple.locationd",
+		"com.apple.eventkitsyncd",
+		"com.apple.Spotlight",
+		"com.apple.MercuryPoster",
+		"com.apple.texttospeech.SiriAUSP",
+	} {
+		if desired[label] {
+			t.Errorf("full profile claims live process %q is disabled", label)
+		}
+	}
+}
+
 // Labels may repeat across categories (a daemon can serve several features)
 // but never within one category.
 func TestNoDuplicateLabelsWithinCategory(t *testing.T) {
