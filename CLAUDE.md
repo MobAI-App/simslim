@@ -66,12 +66,12 @@ each feature (push, storekit, universal-links, …) names just the daemons one
 testable capability needs. `doctor` reads a booted simulator's disabled labels
 and reports any required feature whose daemons are down, exiting non-zero — a CI
 preflight. `features_test.go` asserts every feature label is slimmable.
-`slim.go`'s `ensure()` boots the device, reads its currently
-disabled labels, computes a `delta` against the desired set, and applies the
-changes with `launchctl disable/enable` run inside the simulator via
-`simctl spawn`. The disables are written as persistent launchd overrides, so a
-slimmed simulator comes up slim on every subsequent boot in one boot. `on`
-disables the profile; `off` re-enables the whole managed set back to stock.
+`slim.go`'s `ensure()` rejects a non-empty slim profile on runtimes older than
+iOS 18.5 before booting or mutating the device, then reads the currently disabled
+labels, computes a `delta` against the desired set, and applies the changes with
+`launchctl disable/enable` run inside the simulator via `simctl spawn`. It reboots
+and reads the state back before reporting persistence. `on` disables the profile;
+`off` remains available on every runtime and re-enables the whole managed set.
 
 **simctl wrapper.** `simctl.go` is the only place that shells out to
 `xcrun simctl` (list/boot/shutdown/clone/erase/delete/spawn). `measure.go` sums
