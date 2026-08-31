@@ -19,6 +19,13 @@ One simulator, booted stock and then slimmed, same device and settle time (M1 Pr
 
 Memory here is phys_footprint, the figure Activity Monitor shows, which counts compressed and swapped pages. That's what decides how many simulators fit before the machine starts swapping. Run `simslim measure <udid>` to see it for any booted simulator.
 
+`status` and `measure` answer different questions. `status` counts only the
+allowlisted launchd labels SimSlim manages; it is not a live-process count. A
+slim boot still runs required core services plus system apps and extensions.
+`measure` walks every process under that simulator's `launchd_sim` and sums
+`phys_footprint`. A sum of `ps` RSS values is not comparable because RSS counts
+shared mappings once for every process that maps them.
+
 ## Install
 
 ```sh
@@ -59,10 +66,10 @@ service or disk changes so the copy can serve as a backup.
 ```sh
 simslim list             # simulators and their slim status (--booted to filter)
 simslim profiles         # what a slim boot turns off
-simslim profiles <id>    # the daemons in one category
+simslim profiles <id>    # the launchd labels in one category
 simslim on <udid>        # slim a simulator and reboot it slim
 simslim off <udid>       # put it back to stock
-simslim status <udid>    # how slim a booted simulator is
+simslim status <udid>    # managed launchd-label state (not a process count)
 simslim verify <udid> --profile ci.json   # exact profile match; non-zero on drift
 simslim doctor <udid> --requires push,storekit,universal-links
 simslim measure <udid>   # a booted simulator's memory footprint
@@ -291,7 +298,7 @@ CLI uses. macOS only, since everything runs through `xcrun simctl`.
 
 ## How it works
 
-`simslim on` writes persistent `launchctl disable` entries for the chosen daemons into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only daemons that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.
+`simslim on` writes persistent `launchctl disable` entries for the chosen launchd labels into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only services that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.
 
 Older runtimes do not persist launchd overrides across a reboot (observed on
 iOS 17): `launchctl` accepts each disable, but the simulator comes back stock.

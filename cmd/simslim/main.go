@@ -250,10 +250,10 @@ func cmdStatus(ctx context.Context, cmd *cli.Command) error {
 	if jsonOutput {
 		return writeJSON(simslim.StatusOutput{Status: st, Verdict: verdict, Dropped: dropped})
 	}
-	fmt.Printf("%s: %d/%d managed daemons disabled (%s)\n", udid, st.ManagedDisabled, st.ManagedTotal, verdict)
+	fmt.Printf("%s: %d/%d managed launchd labels disabled (%s)\n", udid, st.ManagedDisabled, st.ManagedTotal, verdict)
 	if showDropped {
 		if len(dropped) == 0 {
-			fmt.Println("  Nothing dropped; every managed daemon is enabled.")
+			fmt.Println("  Nothing dropped; every managed launchd label is enabled.")
 		}
 		for _, c := range dropped {
 			fmt.Printf("  %-14s %s — %s\n", c.ID, c.Name, c.Downside)
@@ -374,7 +374,7 @@ func cmdMeasure(ctx context.Context, cmd *cli.Command) error {
 	if jsonOutput {
 		return writeJSON(m)
 	}
-	fmt.Printf("%s: %d processes, %s memory footprint\n", udid, m.Processes, humanBytes(m.Bytes))
+	fmt.Printf("%s: %d processes, %s memory footprint (phys_footprint)\n", udid, m.Processes, humanBytes(m.Bytes))
 	return nil
 }
 

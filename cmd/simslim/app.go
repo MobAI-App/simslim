@@ -26,7 +26,7 @@ func newApp() *cli.Command {
 		{Name: "list", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "booted", Usage: "only list booted simulators"}}, Action: cmdList},
 		{Name: "profiles", Flags: []cli.Flag{jsonFlag()}, Action: cmdProfiles},
 		{Name: "profile", Action: cmdNewProfile},
-		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled daemons grouped by category"}}, Action: cmdStatus},
+		{Name: "status", Flags: []cli.Flag{jsonFlag(), &cli.BoolFlag{Name: "dropped", Usage: "list the disabled launchd labels grouped by category"}}, Action: cmdStatus},
 		{Name: "verify", Flags: []cli.Flag{
 			jsonFlag(),
 			&cli.StringFlag{Name: "profile", Usage: "verify against a JSON profile file (mutually exclusive with --except/--keep)"},

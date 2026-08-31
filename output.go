@@ -18,7 +18,7 @@ type StatusOutput struct {
 	Dropped []DroppedCategory `json:"dropped,omitempty"` // only when `status --dropped` is requested
 }
 
-// DroppedCategory lists the managed daemons a category has disabled on a
+// DroppedCategory lists the managed launchd labels a category has disabled on a
 // simulator, alongside the feature that stops working as a result.
 type DroppedCategory struct {
 	ID       string   `json:"id"`
