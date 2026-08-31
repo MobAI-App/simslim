@@ -3,6 +3,7 @@ package simslim
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -103,7 +104,7 @@ func xcrun(ctx context.Context, args ...string) ([]byte, error) {
 func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) {
 	out, err := exec.CommandContext(ctx, "xcrun", simctlArgsForSet(set.token, "list", "devices", "-j")...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("simctl list: %w", err)
+		return nil, listError(err)
 	}
 	var parsed struct {
 		Devices map[string][]struct {
@@ -130,6 +131,31 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 		}
 	}
 	return devices, nil
+}
+
+// listError surfaces xcrun's stderr, which Output (kept separate so stdout
+// stays clean JSON) parks in ExitError.Stderr; without it a failed listing
+// reports only an exit code.
+func listError(err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return formatListError(err, string(exitErr.Stderr))
+	}
+	return fmt.Errorf("simctl list: %w", err)
+}
+
+// formatListError appends stderr to the listing error and, when xcrun cannot
+// find simctl at all — xcode-select pointing at the Command Line Tools, which
+// do not ship it — says how to select a full Xcode.
+func formatListError(err error, stderr string) error {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return fmt.Errorf("simctl list: %w", err)
+	}
+	if strings.Contains(stderr, `unable to find utility "simctl"`) {
+		return fmt.Errorf("simctl list: %w: %s (simctl ships with full Xcode, not the Command Line Tools; select one with `sudo xcode-select -s /Applications/Xcode.app`)", err, stderr)
+	}
+	return fmt.Errorf("simctl list: %w: %s", err, stderr)
 }
 
 // The default set is mandatory; a secondary set that cannot be listed (e.g. it
