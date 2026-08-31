@@ -21,10 +21,19 @@ func (r Reporter) report(msg string) {
 // ensure brings the device to exactly the desired disabled state and boots it.
 // The disabled overrides persist in the device's launchd DB, so once set a slim
 // device comes up slim in a single boot; a reboot only happens when the state
-// actually changes. A running device is required to read/mutate launchctl, so
-// the device is booted first regardless. Each slow phase reports progress so the
-// caller can show the user that a multi-minute reconfigure is still working.
+// actually changes. A non-empty profile is rejected before boot on runtimes
+// without persistent overrides. Each slow phase reports progress so the caller
+// can show the user that a multi-minute reconfigure is still working.
 func ensure(ctx context.Context, set, udid string, desired map[string]bool, report Reporter) (changed bool, err error) {
+	if len(desired) > 0 {
+		d, err := FindDevice(ctx, udid, set)
+		if err != nil {
+			return false, err
+		}
+		if !persistentOverridesSupported(d.OSVersion) {
+			return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer", d.OSVersion)
+		}
+	}
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
 	if err := BootAndWait(ctx, set, udid); err != nil {
 		return false, err
@@ -61,7 +70,7 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 		return true, err
 	}
 	if lost := countLost(after, desired, managedSet()); lost > 0 {
-		return true, persistError(ctx, udid, lost, len(toDisable)+len(toEnable))
+		return true, fmt.Errorf("the disable overrides did not survive the reboot (%d of %d changes lost)", lost, len(toDisable)+len(toEnable))
 	}
 	return true, nil
 }
@@ -73,26 +82,14 @@ func countLost(after, desired, managed map[string]bool) int {
 	return len(toDisable) + len(toEnable)
 }
 
-// persistError explains that launchctl accepted the transitions but the
-// overrides were gone after the reboot. Older runtimes (observed on iOS 17)
-// do not persist launchd disable overrides across a reboot, so slimming
-// silently has no effect there; failing loudly beats claiming success.
-func persistError(ctx context.Context, udid string, lost, applied int) error {
-	msg := fmt.Sprintf("the disable overrides did not survive the reboot (%d of %d changes lost)", lost, applied)
-	if d, err := FindDevice(ctx, udid, ""); err == nil && osMajor(d.OSVersion) > 0 && osMajor(d.OSVersion) < 18 {
-		msg += fmt.Sprintf("; iOS %s runtimes do not persist launchd overrides — use an iOS 18 or newer runtime", d.OSVersion)
+func persistentOverridesSupported(version string) bool {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return false
 	}
-	return fmt.Errorf("%s", msg)
-}
-
-// osMajor extracts the major version from an OSVersion like "17.2" (0 when unknown).
-func osMajor(v string) int {
-	major, _, _ := strings.Cut(v, ".")
-	n, err := strconv.Atoi(major)
-	if err != nil {
-		return 0
-	}
-	return n
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	return majorErr == nil && minorErr == nil && (major > 18 || major == 18 && minor >= 5)
 }
 
 // enableSlim disables the profile's daemons and boots the device slim.

@@ -1,6 +1,52 @@
 package simslim
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestEnsureRejectsIOS183BeforeBoot(t *testing.T) {
+	const udid = "00000000-0000-0000-0000-000000000034"
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "xcrun.log")
+	xcrunPath := filepath.Join(dir, "xcrun")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$SIMSLIM_XCRUN_LOG"
+if [ "$*" = "simctl list devices -j" ]; then
+  printf '%s\n' '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-3":[{"udid":"00000000-0000-0000-0000-000000000034","name":"Issue 34","state":"Shutdown","isAvailable":true,"dataPath":"/tmp/issue-34"}]}}'
+  exit 0
+fi
+exit 99
+`
+	if err := os.WriteFile(xcrunPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SIMSLIM_XCRUN_LOG", logPath)
+
+	var label string
+	for label = range SlimmableSet() {
+		break
+	}
+	changed, err := ensure(context.Background(), "default", udid, map[string]bool{label: true}, nil)
+	if changed {
+		t.Fatal("ensure reported a change on an unsupported runtime")
+	}
+	const want = "iOS 18.3 runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer"
+	if err == nil || err.Error() != want {
+		t.Fatalf("ensure error = %v, want %q", err, want)
+	}
+	log, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if got := strings.TrimSpace(string(log)); got != "simctl list devices -j" {
+		t.Fatalf("xcrun calls = %q, want only the read-only device lookup", got)
+	}
+}
 
 func TestCountLost(t *testing.T) {
 	managed := map[string]bool{"a": true, "b": true, "c": true}
@@ -26,16 +72,24 @@ func TestCountLost(t *testing.T) {
 	}
 }
 
-func TestOSMajor(t *testing.T) {
+func TestPersistentOverridesSupported(t *testing.T) {
 	tests := []struct {
 		v    string
-		want int
+		want bool
 	}{
-		{"17.2", 17}, {"18.5", 18}, {"26.5", 26}, {"18", 18}, {"", 0}, {"garbage", 0},
+		{"17.5", false},
+		{"18.3", false},
+		{"18.4.1", false},
+		{"18.5", true},
+		{"18.5.1", true},
+		{"26.5", true},
+		{"18", false},
+		{"", false},
+		{"garbage", false},
 	}
 	for _, tt := range tests {
-		if got := osMajor(tt.v); got != tt.want {
-			t.Errorf("osMajor(%q) = %d, want %d", tt.v, got, tt.want)
+		if got := persistentOverridesSupported(tt.v); got != tt.want {
+			t.Errorf("persistentOverridesSupported(%q) = %t, want %t", tt.v, got, tt.want)
 		}
 	}
 }
