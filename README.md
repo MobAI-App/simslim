@@ -6,7 +6,7 @@ A freshly booted iOS simulator starts around 180 background services: Siri, Spot
 
 https://github.com/user-attachments/assets/f4665e41-43b4-49cd-9388-3da533e9fd7b
 
-*12 slim simulators on a 16 GB M1 Pro, each driven by its own Claude Code agent through MobAI.*
+*12 slim simulators on a 16 GB M1 Pro, each driven by its own Claude Code agent through MobAI. Stock simulators start thrashing at around 5.*
 
 ## Numbers
 
