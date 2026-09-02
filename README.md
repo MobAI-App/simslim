@@ -4,9 +4,9 @@ Run a lot more iOS simulators on one Mac by turning off the background daemons a
 
 A freshly booted iOS simulator starts around 180 background services: Siri, Spotlight indexing, photo analysis, News, wallpaper posters, iCloud sync, and so on. None of it matters when you're using the simulator for development, testing, or CI. simslim switches those services off, which cuts each simulator's memory roughly 4x. On the same laptop you go from a handful of simulators to a screenful.
 
-![19 iOS simulators running at once on a 16 GB Mac](docs/simslim-19-sims.png)
+https://github.com/user-attachments/assets/f4665e41-43b4-49cd-9388-3da533e9fd7b
 
-*19 iOS simulators, all under automation, on a 16 GB MacBook Pro. Stock simulators start thrashing at around 5.*
+*12 slim simulators on a 16 GB M1 Pro, each driven by its own Claude Code agent through MobAI.*
 
 ## Numbers
 
