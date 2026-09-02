@@ -345,7 +345,7 @@ struct ContentView: View {
 
   private var tableHeader: some View {
     HStack(spacing: 12) {
-      Color.clear.frame(width: 24, height: 1)
+      Color.clear.frame(width: 30, height: 1)
       Text("SIMULATOR")
         .frame(minWidth: 255, maxWidth: .infinity, alignment: .leading)
       Text("RUNTIME").frame(width: 74, alignment: .leading)
