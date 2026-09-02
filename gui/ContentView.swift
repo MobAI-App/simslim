@@ -1250,10 +1250,11 @@ private struct SimulatorRow: View {
           Image(systemName: isSelected ? "checkmark.square.fill" : "square")
             .font(.title3)
             .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .frame(width: 30, height: 30)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(model.isBusy)
-        .frame(width: 24)
 
         HStack(spacing: 10) {
           Image(systemName: "iphone")
