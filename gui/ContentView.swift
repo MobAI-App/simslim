@@ -345,7 +345,7 @@ struct ContentView: View {
 
   private var tableHeader: some View {
     HStack(spacing: 12) {
-      Color.clear.frame(width: 24, height: 1)
+      Color.clear.frame(width: 30, height: 1)
       Text("SIMULATOR")
         .frame(minWidth: 255, maxWidth: .infinity, alignment: .leading)
       Text("RUNTIME").frame(width: 74, alignment: .leading)
@@ -1250,10 +1250,11 @@ private struct SimulatorRow: View {
           Image(systemName: isSelected ? "checkmark.square.fill" : "square")
             .font(.title3)
             .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+            .frame(width: 30, height: 30)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(model.isBusy)
-        .frame(width: 24)
 
         HStack(spacing: 10) {
           Image(systemName: "iphone")
