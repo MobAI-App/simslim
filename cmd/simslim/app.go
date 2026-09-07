@@ -66,6 +66,10 @@ func newApp() *cli.Command {
 		{Name: "off", Flags: []cli.Flag{
 			preserveBootStateFlag("return an initially shutdown simulator to shutdown after reconfiguration"),
 		}, Action: cmdOff},
+		{Name: "benchmark", Flags: []cli.Flag{
+			jsonFlag(),
+			preserveBootStateFlag("return each initially shutdown simulator to shutdown when done"),
+		}, Action: cmdBenchmark},
 	}
 
 	onUsageError := func(_ context.Context, _ *cli.Command, err error, _ bool) error {
