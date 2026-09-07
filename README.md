@@ -68,6 +68,7 @@ simslim list             # simulators and their slim status (--booted to filter)
 simslim profiles         # what a slim boot turns off
 simslim profiles <id>    # the launchd labels in one category
 simslim on <udid>        # slim a simulator and reboot it slim
+simslim on <udid> --this-boot   # slim the current boot session, no reboot
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # managed launchd-label state (not a process count)
 simslim verify <udid> --profile ci.json   # exact profile match; non-zero on drift
@@ -223,6 +224,27 @@ Where `doctor` answers "do the features my tests need still work?", `verify`
 answers "is this simulator in exactly the slim state I configured?". Supports
 `--json`.
 
+### Slimming without a reboot
+
+`simslim on --this-boot` slims the running boot session in place: it disables
+each daemon and then boots it out of launchd, so the process stops now and
+cannot respawn, with no shutdown/boot cycle. It takes the same
+`--profile`/`--except`/`--keep` selection as `on`.
+
+```sh
+simslim on <udid> --this-boot --profile ci.json
+```
+
+On iOS 18.5 and newer this is simply the faster path; the disable overrides are
+stored as well, so the next boot comes up slim too. On iOS 17.x and 18.3, which
+cannot persist overrides, it is the only way to slim at all, and the state is
+gone at the next reboot: re-run it after every boot. `status` says so when it
+reads such a simulator, and `status --json` carries a `persistent` field.
+
+Live slimming only moves toward more-disabled. Managed daemons already disabled
+beyond the profile are left alone, because starting a daemon again live would
+need a per-label bootstrap; `simslim off` restores them with a reboot.
+
 ## Disk cleanup
 
 Disk cleanup is permanent and separate from service slimming. `disk-plan` is
@@ -303,8 +325,10 @@ CLI uses. macOS only, since everything runs through `xcrun simctl`.
 The earliest runtime with verified persistence is iOS 18.5. iOS 17.x and 18.3
 accept each `launchctl disable`, but the simulator comes back stock after a
 reboot. `simslim on` rejects runtimes older than 18.5 before booting or changing
-launchd state. Supported runtimes are still read back after the reboot, and the
-command fails instead of claiming success if any requested override was lost.
+launchd state and points at `--this-boot`, which slims the current boot session
+only (see [Slimming without a reboot](#slimming-without-a-reboot)). Supported
+runtimes are still read back after the reboot, and the command fails instead of
+claiming success if any requested override was lost.
 
 This is per-simulator state, not a global setting. The daemon disables live in
 that one simulator's launchd database and nowhere else. `simslim clone` copies

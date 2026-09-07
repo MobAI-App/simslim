@@ -251,6 +251,9 @@ func cmdStatus(ctx context.Context, cmd *cli.Command) error {
 		return writeJSON(simslim.StatusOutput{Status: st, Verdict: verdict, Dropped: dropped})
 	}
 	fmt.Printf("%s: %d/%d managed launchd labels disabled (%s)\n", udid, st.ManagedDisabled, st.ManagedTotal, verdict)
+	if st.ManagedDisabled > 0 && !st.Persistent {
+		fmt.Println("  This runtime cannot persist launchd overrides: the state reverts to stock at the next reboot.")
+	}
 	if showDropped {
 		if len(dropped) == 0 {
 			fmt.Println("  Nothing dropped; every managed launchd label is enabled.")
@@ -739,6 +742,10 @@ func cmdShutdown(ctx context.Context, cmd *cli.Command) error {
 
 func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	preserveBootState := cmd.Bool("preserve-boot-state")
+	thisBoot := cmd.Bool("this-boot")
+	if thisBoot && preserveBootState {
+		return fmt.Errorf("--this-boot cannot be combined with --preserve-boot-state: shutting the simulator down discards a this-boot slim")
+	}
 	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
 		return err
@@ -755,12 +762,15 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown := preserveBootState && device.State == "Shutdown"
-
-	fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.Desired()))
 	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, simslim.BootTimeout)
 	defer cancel()
+	if thisBoot {
+		return onThisBoot(tctx, device, p, report)
+	}
+	originallyShutdown := preserveBootState && device.State == "Shutdown"
+
+	fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.Desired()))
 	changed, operationErr := simslim.EnableSlim(tctx, device.Set, udid, p, report)
 	if originallyShutdown {
 		shutdownErr := returnToShutdown(ctx, device.Set, udid)
@@ -786,6 +796,28 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 		} else {
 			fmt.Println("Already slim. Nothing to change.")
 		}
+	}
+	return nil
+}
+
+// onThisBoot is `on --this-boot`: stop the profile's daemons now, no reboot.
+// The closing line says what the next boot brings, since on iOS < 18.5 the
+// state is gone after a reboot and someone will otherwise report that as a bug.
+func onThisBoot(ctx context.Context, device simslim.Device, p simslim.Profile, report simslim.Reporter) error {
+	fmt.Fprintf(os.Stderr, "Slimming %s for this boot session: stopping %d background services without a reboot.\n", device.UDID, len(p.Desired()))
+	changed, err := simslim.EnableSlimThisBoot(ctx, device.Set, device.UDID, p, report)
+	if err != nil {
+		return err
+	}
+	if changed {
+		fmt.Println("Done. Simulator slimmed for this boot session without a reboot.")
+	} else {
+		fmt.Println("Already slim. Confirmed every profiled daemon is stopped for this boot session.")
+	}
+	if simslim.PersistentOverridesSupported(device.OSVersion) {
+		fmt.Println("The disable overrides are also stored, so the next boot should come up slim; `simslim verify` after a reboot confirms it.")
+	} else {
+		fmt.Printf("iOS %s cannot persist overrides: the simulator returns to stock at its next boot, so re-run this command after every boot.\n", device.OSVersion)
 	}
 	return nil
 }
@@ -914,6 +946,10 @@ COMMANDS
                        exclusive with --except/--keep
       --except ids     Leave these categories enabled (comma-separated)
       --keep labels    Keep these individual daemons running (comma-separated)
+      --this-boot      Stop the daemons in the current boot session without a
+                       reboot. Works on every runtime, including iOS 17.x and
+                       18.3, where it is the only way to slim; there the state
+                       is gone at the next reboot
       --preserve-boot-state
                        Return an initially shutdown simulator to shutdown
   off <udid>           Restore a simulator to stock (re-enable + reboot)

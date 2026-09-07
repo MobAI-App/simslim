@@ -382,11 +382,22 @@ const batchSize = 40
 // simulator that is still settling after its first boot.
 const batchWave = 8
 
+// liveDisable is the applyDelta action that disables a label and then boots
+// the running service out of launchd, so the daemon stops now and cannot
+// respawn for the rest of the boot session. `disable` alone only blocks the
+// next bootstrap; `bootout` is what removes the live job.
+const liveDisable = "bootout"
+
+// bootoutGone is launchctl's exit status when the service to boot out is not
+// loaded ("No such process"), which is already the state liveDisable wants.
+const bootoutGone = 3
+
 // batchScript runs launchctl once per positional label inside one spawned
 // shell, in waves of $2 concurrent transitions, and prints a marker per
-// outcome. dyld strips DYLD_ROOT_PATH from the shell's environment (it is a
-// restricted platform binary), so the nested launchctl would abort with
-// "DYLD_ROOT_PATH not set for simulator program";
+// outcome. The bootout action is a disable followed by a bootout that also
+// accepts an already-missing service. dyld strips DYLD_ROOT_PATH from the
+// shell's environment (it is a restricted platform binary), so the nested
+// launchctl would abort with "DYLD_ROOT_PATH not set for simulator program";
 // SIMULATOR_ROOT carries the same runtime root and does survive, so the
 // script restores DYLD_ROOT_PATH from it. Only marked-ok labels count as
 // done, so a chunk that dies mid-way (timeout, wedged daemon) just leaves its
@@ -394,9 +405,18 @@ const batchWave = 8
 // individual launchctl failure from turning into a chunk-level error.
 const batchScript = `[ -n "$SIMULATOR_ROOT" ] && export DYLD_ROOT_PATH="$SIMULATOR_ROOT"
 action=$1; wave=$2; shift 2
+step() {
+  if [ "$action" = bootout ]; then
+    launchctl disable "system/$1" || return 1
+    launchctl bootout "system/$1"; rc=$?
+    [ $rc -eq 0 ] || [ $rc -eq 3 ]
+  else
+    launchctl "$action" "system/$1"
+  fi
+}
 n=0
 for l in "$@"; do
-  { launchctl "$action" "system/$l" && echo "simslim-ok $l" || echo "simslim-fail $l"; } &
+  { step "$l" && echo "simslim-ok $l" || echo "simslim-fail $l"; } &
   n=$((n + 1))
   [ $((n % wave)) -eq 0 ] && wait
 done
@@ -429,30 +449,46 @@ func parseBatchOK(output string) map[string]bool {
 	return ok
 }
 
-// applyDelta disables then enables the given labels. The first pass batches
-// them through a spawned shell, chunked so one stall costs at most a chunk;
-// later passes run launchctl as the direct target of `simctl spawn`, one
-// label at a time, for precise per-label errors. launchctl exits 0 even when
+// applyDelta disables then enables the given labels; disableAction is
+// "disable" (override only, applied at the next boot) or liveDisable. The
+// first pass batches them through a spawned shell, chunked so one stall
+// costs at most a chunk; later passes run launchctl as the direct target of
+// `simctl spawn`, one label at a time, for precise per-label errors. launchctl exits 0 even when
 // it prints the benign "switch to user/foreground" note, so a non-zero exit
 // is a real failure; failures are collected and retried on later passes
 // rather than aborting the whole profile.
-func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, report Reporter) error {
+func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []string, disableAction string, report Reporter) error {
 	type transition struct{ action, label string }
 	pending := make([]transition, 0, len(toDisable)+len(toEnable))
 	for _, l := range toDisable {
-		pending = append(pending, transition{"disable", l})
+		pending = append(pending, transition{disableAction, l})
 	}
 	for _, l := range toEnable {
 		pending = append(pending, transition{"enable", l})
 	}
 	total := len(pending)
-	run := func(action, label string) error {
+	launchctl := func(verb, label string) ([]byte, error) {
 		spawnCtx, cancel := context.WithTimeout(ctx, SpawnTimeout)
 		defer cancel()
-		out, err := exec.CommandContext(spawnCtx, "xcrun", simctlArgs(set, "spawn", udid,
-			"launchctl", action, "system/"+label)...).CombinedOutput()
+		return exec.CommandContext(spawnCtx, "xcrun", simctlArgs(set, "spawn", udid,
+			"launchctl", verb, "system/"+label)...).CombinedOutput()
+	}
+	run := func(action, label string) error {
+		verb := action
+		if action == liveDisable {
+			verb = "disable"
+		}
+		out, err := launchctl(verb, label)
 		if err != nil {
-			return fmt.Errorf("%s %s: %w: %s", action, label, err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("%s %s: %w: %s", verb, label, err, strings.TrimSpace(string(out)))
+		}
+		if action != liveDisable {
+			return nil
+		}
+		out, err = launchctl("bootout", label)
+		var exitErr *exec.ExitError
+		if err != nil && !(errors.As(err, &exitErr) && exitErr.ExitCode() == bootoutGone) {
+			return fmt.Errorf("bootout %s: %w: %s", label, err, strings.TrimSpace(string(out)))
 		}
 		return nil
 	}
@@ -461,7 +497,7 @@ func applyDelta(ctx context.Context, set, udid string, toDisable, toEnable []str
 	// First pass: batched. Chunks are grouped by action so the shell script
 	// stays a single launchctl verb per invocation.
 	var remaining []transition
-	for _, action := range []string{"disable", "enable"} {
+	for _, action := range []string{disableAction, "enable"} {
 		var labels []string
 		for _, t := range pending {
 			if t.action == action {

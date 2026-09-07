@@ -72,6 +72,9 @@ labels, computes a `delta` against the desired set, and applies the changes with
 `launchctl disable/enable` run inside the simulator via `simctl spawn`. It reboots
 and reads the state back before reporting persistence. `on` disables the profile;
 `off` remains available on every runtime and re-enables the whole managed set.
+`EnableSlimThisBoot` (`on --this-boot`) skips the reboot: it runs `launchctl
+disable` + `launchctl bootout` per label so the daemon stops in the current boot
+session, which is the only slimming possible on runtimes older than iOS 18.5.
 
 **simctl wrapper.** `simctl.go` is the only place that shells out to
 `xcrun simctl` (list/boot/shutdown/clone/erase/delete/spawn). `measure.go` sums
