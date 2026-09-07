@@ -85,7 +85,7 @@ simslim boot <udid>      # boot a simulator and wait for its services
 simslim shutdown <udid>  # shut down a booted simulator
 simslim erase <udid>     # erase apps, data, settings, and slimming overrides
 simslim delete <udid>    # permanently delete a simulator
-simslim benchmark <udid> [<udid> ...]  # measure stock vs. slim memory, then restore each device
+simslim benchmark <udid> [<udid> ...] --runs 5  # sample stock vs. slim memory N times, then restore each device
 ```
 
 Read-only and simulator-management commands accept `--json` for integrations

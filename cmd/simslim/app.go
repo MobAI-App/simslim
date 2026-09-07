@@ -68,6 +68,7 @@ func newApp() *cli.Command {
 		}, Action: cmdOff},
 		{Name: "benchmark", Flags: []cli.Flag{
 			jsonFlag(),
+			&cli.IntFlag{Name: "runs", Usage: "samples to take per device", Value: 1},
 			preserveBootStateFlag("return each initially shutdown simulator to shutdown when done"),
 		}, Action: cmdBenchmark},
 	}

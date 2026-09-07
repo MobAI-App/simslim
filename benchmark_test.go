@@ -1,6 +1,42 @@
 package simslim
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestComputeStats(t *testing.T) {
+	tests := []struct {
+		name    string
+		samples []int64
+		want    MemoryStats
+	}{
+		{name: "empty", samples: nil, want: MemoryStats{}},
+		{
+			name:    "single sample",
+			samples: []int64{1000},
+			want:    MemoryStats{Samples: []int64{1000}, MinBytes: 1000, MeanBytes: 1000, MaxBytes: 1000},
+		},
+		{
+			name:    "spread across several samples",
+			samples: []int64{1000, 3000, 2000},
+			want:    MemoryStats{Samples: []int64{1000, 3000, 2000}, MinBytes: 1000, MeanBytes: 2000, MaxBytes: 3000},
+		},
+		{
+			name:    "mean rounds down via integer division",
+			samples: []int64{1000, 1000, 1001},
+			want:    MemoryStats{Samples: []int64{1000, 1000, 1001}, MinBytes: 1000, MeanBytes: 1000, MaxBytes: 1001},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := computeStats(tt.samples); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("computeStats(%v) = %+v, want %+v", tt.samples, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestSumBenchmark(t *testing.T) {
 	tests := []struct {
@@ -13,7 +49,7 @@ func TestSumBenchmark(t *testing.T) {
 		{
 			name: "single device",
 			results: []BenchmarkResult{
-				{StockMemory: Measurement{Bytes: 4000}, SlimMemory: Measurement{Bytes: 1000}},
+				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
 			},
 			wantStock: 4000,
 			wantSlim:  1000,
@@ -21,8 +57,8 @@ func TestSumBenchmark(t *testing.T) {
 		{
 			name: "sums across devices",
 			results: []BenchmarkResult{
-				{StockMemory: Measurement{Bytes: 4000}, SlimMemory: Measurement{Bytes: 1000}},
-				{StockMemory: Measurement{Bytes: 2000}, SlimMemory: Measurement{Bytes: 500}},
+				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
+				{Stock: MemoryStats{MeanBytes: 2000}, Slim: MemoryStats{MeanBytes: 500}},
 			},
 			wantStock: 6000,
 			wantSlim:  1500,
@@ -30,8 +66,8 @@ func TestSumBenchmark(t *testing.T) {
 		{
 			name: "errored device excluded from totals",
 			results: []BenchmarkResult{
-				{StockMemory: Measurement{Bytes: 4000}, SlimMemory: Measurement{Bytes: 1000}},
-				{StockMemory: Measurement{Bytes: 9999}, SlimMemory: Measurement{Bytes: 9999}, Error: "boot timed out"},
+				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
+				{Stock: MemoryStats{MeanBytes: 9999}, Slim: MemoryStats{MeanBytes: 9999}, Error: "boot timed out"},
 			},
 			wantStock: 4000,
 			wantSlim:  1000,
