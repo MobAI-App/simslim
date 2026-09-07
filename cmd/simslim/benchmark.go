@@ -36,14 +36,18 @@ func cmdBenchmark(ctx context.Context, cmd *cli.Command) error {
 }
 
 func printBenchmark(out simslim.BenchmarkOutput, runs int) {
-	fmt.Printf("%-30s %-24s %-24s %8s\n", "SIMULATOR", "STOCK", "SLIM", "RATIO")
+	fmt.Printf("%-30s %-10s %-24s %-24s %8s\n", "SIMULATOR", "COLD BOOT", "STOCK", "SLIM", "RATIO")
 	for _, d := range out.Devices {
 		name := truncate(fmt.Sprintf("%s · %s", d.Name, shortUDID(d.UDID)), 30)
 		if d.Error != "" {
 			fmt.Printf("%-30s error: %s\n", name, d.Error)
 			continue
 		}
-		fmt.Printf("%-30s %-24s %-24s %8s\n", name,
+		coldBoot := "—"
+		if d.FirstBootBytes > 0 {
+			coldBoot = humanBytes(d.FirstBootBytes)
+		}
+		fmt.Printf("%-30s %-10s %-24s %-24s %8s\n", name, coldBoot,
 			formatStats(d.Stock, runs), formatStats(d.Slim, runs),
 			benchmarkRatio(d.Stock.MeanBytes, d.Slim.MeanBytes))
 	}

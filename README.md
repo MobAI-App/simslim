@@ -332,10 +332,11 @@ runtimes are still read back after the reboot, and the command fails instead of
 claiming success if any requested override was lost.
 
 `simslim benchmark` measures the memory claim directly: for each simulator you
-give it, it boots stock, measures, slims, measures again, then restores the
-device to stock before moving on. It's a maintainer/verification tool rather
-than a daily driver — point it at a few already-created simulators spanning
-the runtimes you care about.
+give it, it does one uncounted warm-up boot (so first-boot migrators and
+indexing don't inflate the first sample), then boots stock, measures, slims,
+measures again (repeating `--runs` times) before restoring the device to
+stock. It's a maintainer/verification tool rather than a daily driver: point
+it at a few already-created simulators spanning the runtimes you care about.
 
 This is per-simulator state, not a global setting. The daemon disables live in
 that one simulator's launchd database and nowhere else. `simslim clone` copies

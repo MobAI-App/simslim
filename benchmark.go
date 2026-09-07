@@ -39,9 +39,14 @@ func computeStats(samples []int64) MemoryStats {
 // or more runs.
 type BenchmarkResult struct {
 	Device
-	Stock MemoryStats `json:"stock"`
-	Slim  MemoryStats `json:"slim"`
-	Error string      `json:"error,omitempty"`
+	// FirstBootBytes is the stock footprint measured during the uncounted
+	// warm-up boot, before any migration/indexing settling: diagnostic only,
+	// not included in Stock's samples or stats. Omitted if the warm-up boot
+	// failed before it could be measured.
+	FirstBootBytes int64       `json:"firstBootBytes,omitempty"`
+	Stock          MemoryStats `json:"stock"`
+	Slim           MemoryStats `json:"slim"`
+	Error          string      `json:"error,omitempty"`
 }
 
 // BenchmarkOutput is the fleet-wide result of FleetBenchmark: every device's
@@ -98,7 +103,7 @@ func benchmarkDevice(ctx context.Context, udid string, runs int, preserveBootSta
 	originallyShutdown := preserveBootState && d.State == "Shutdown"
 
 	var stockSamples, slimSamples []int64
-	var runErr error
+	firstBootBytes, runErr := warmUpDevice(ctx, d, report)
 	for i := 0; i < runs && runErr == nil; i++ {
 		report.report(fmt.Sprintf("%s: run %d/%d: establishing stock baseline...", udid, i+1, runs))
 		if _, err := timedDisableSlim(ctx, d, report); err != nil {
@@ -126,7 +131,7 @@ func benchmarkDevice(ctx context.Context, udid string, runs int, preserveBootSta
 		slimSamples = append(slimSamples, slim.Bytes)
 	}
 
-	res := BenchmarkResult{Device: d, Stock: computeStats(stockSamples), Slim: computeStats(slimSamples)}
+	res := BenchmarkResult{Device: d, FirstBootBytes: firstBootBytes, Stock: computeStats(stockSamples), Slim: computeStats(slimSamples)}
 
 	report.report(udid + ": restoring...")
 	if err := restoreBenchmarkDevice(ctx, d, originallyShutdown, report); err != nil && runErr == nil {
@@ -136,6 +141,35 @@ func benchmarkDevice(ctx context.Context, udid string, runs int, preserveBootSta
 		res.Error = runErr.Error()
 	}
 	return res
+}
+
+// warmUpDevice boots the device once and shuts it back down, uncounted,
+// before any measured run starts. A device's very first boot after creation
+// (or after sitting shut down for a while) can still be running one-time
+// migrators (LaunchServicesMigrator, MCProfile, Spotlight indexing, …) right
+// when a naive first sample would be taken, inflating it relative to later
+// runs. Booting once and shutting back down lets that settle, so every
+// counted run's boot starts from the same warmed state. The footprint at
+// this uncounted boot is measured and returned purely as diagnostic data
+// (e.g. to see how much a cold boot actually differs from a warmed one);
+// it plays no part in the benchmark's own statistics.
+func warmUpDevice(ctx context.Context, d Device, report Reporter) (firstBootBytes int64, err error) {
+	report.report(d.UDID + ": warming up (uncounted boot to settle first-boot migration)...")
+	bootCtx, cancel := context.WithTimeout(ctx, BootTimeout)
+	defer cancel()
+	if err := BootAndWait(bootCtx, d.Set, d.UDID); err != nil {
+		return 0, err
+	}
+	m, measureErr := Measure(ctx, d.UDID)
+	if measureErr == nil {
+		firstBootBytes = m.Bytes
+	}
+	shutdownCtx, cancel2 := context.WithTimeout(ctx, ShutdownTimeout)
+	defer cancel2()
+	if err := Shutdown(shutdownCtx, d.Set, d.UDID); err != nil {
+		return firstBootBytes, err
+	}
+	return firstBootBytes, WaitShutdown(shutdownCtx, d.Set, d.UDID, ShutdownTimeout)
 }
 
 // restoreBenchmarkDevice returns a benchmarked device to stock and, if
