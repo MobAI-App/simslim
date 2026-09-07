@@ -822,6 +822,21 @@ func onNoReboot(ctx context.Context, device simslim.Device, p simslim.Profile, r
 	return nil
 }
 
+// cmdWatch slims every simulator no-reboot as it boots, until Ctrl-C. It is the
+// hook for xcodebuild parallel-testing clones, which are created stock and
+// deleted per run: point --set at the parallel-testing device set and run this
+// alongside the test invocation.
+func cmdWatch(ctx context.Context, cmd *cli.Command) error {
+	p, err := simslim.BuildProfile(cmd.String("profile"), cmd.String("except"), cmd.String("keep"))
+	if err != nil {
+		return err
+	}
+	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
+	sets := append([]string{"default", "testing"}, simslim.ExtraDeviceSetTokens()...)
+	fmt.Fprintf(os.Stderr, "Watching device sets [%s]; slimming each simulator no-reboot as it boots. Ctrl-C to stop.\n", strings.Join(sets, ", "))
+	return simslim.Watch(ctx, p, cmd.Duration("interval"), report)
+}
+
 func cmdOff(ctx context.Context, cmd *cli.Command) error {
 	preserveBootState := cmd.Bool("preserve-boot-state")
 	udid, err := oneUDID(cmd.Args().Slice())
@@ -955,6 +970,15 @@ COMMANDS
   off <udid>           Restore a simulator to stock (re-enable + reboot)
       --preserve-boot-state
                        Return an initially shutdown simulator to shutdown
+  watch                Slim every simulator no-reboot as it boots, until Ctrl-C.
+                       The hook for xcodebuild parallel-testing clones, which are
+                       created stock and deleted per run; point --set at the
+                       parallel-testing device set
+      --profile path   Apply a committed JSON profile (see below); mutually
+                       exclusive with --except/--keep
+      --except ids     Leave these categories enabled (comma-separated)
+      --keep labels    Keep these individual daemons running (comma-separated)
+      --interval dur   How often to rescan for booting simulators (default 3s)
   status <udid>        Report how slim a booted simulator is
       --dropped        Also list the disabled daemons grouped by category
   verify <udid>        Check that a booted simulator's disable overrides still

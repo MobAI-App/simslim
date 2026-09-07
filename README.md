@@ -245,6 +245,25 @@ Live slimming only moves toward more-disabled. Managed daemons already disabled
 beyond the profile are left alone, because starting a daemon again live would
 need a per-label bootstrap; `simslim off` restores them with a reboot.
 
+### Slimming parallel-testing clones
+
+`xcodebuild` parallel testing creates a fresh clone per worker in its own device
+set, runs the tests, and deletes the clones when the run ends. The clones are
+created stock, and disable overrides do not survive `simctl clone`, so there is
+no device to slim ahead of time. `simslim watch` closes that gap: it polls the
+device sets and slims each simulator no-reboot the moment it boots, then leaves
+it alone. A clone slimmed a few seconds into a multi-minute run keeps its freed
+memory for the rest of the run.
+
+```sh
+simslim watch --except web,store &
+xcodebuild test -scheme App -parallel-testing-enabled YES -parallel-testing-worker-count 4 ...
+```
+
+It takes the same `--profile`/`--except`/`--keep` selection as `on`, and scans
+the default and `testing` sets plus any passed with `--set`. Point `--set` at a
+custom parallel-testing device set if your Xcode uses one. It runs until Ctrl-C.
+
 ## Disk cleanup
 
 Disk cleanup is permanent and separate from service slimming. `disk-plan` is

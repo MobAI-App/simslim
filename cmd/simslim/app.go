@@ -66,6 +66,12 @@ func newApp() *cli.Command {
 		{Name: "off", Flags: []cli.Flag{
 			preserveBootStateFlag("return an initially shutdown simulator to shutdown after reconfiguration"),
 		}, Action: cmdOff},
+		{Name: "watch", Flags: []cli.Flag{
+			&cli.StringFlag{Name: "profile", Usage: "apply a JSON profile file (mutually exclusive with --except/--keep)"},
+			&cli.StringFlag{Name: "except", Usage: "comma-separated category IDs to leave fully enabled (see `simslim profiles`)"},
+			&cli.StringFlag{Name: "keep", Usage: "comma-separated launchd labels to keep running"},
+			&cli.DurationFlag{Name: "interval", Usage: "how often to rescan for booting simulators", Value: simslim.DefaultWatchInterval},
+		}, Action: cmdWatch},
 	}
 
 	onUsageError := func(_ context.Context, _ *cli.Command, err error, _ bool) error {
