@@ -35,7 +35,7 @@ exit 99
 	if changed {
 		t.Fatal("ensure reported a change on an unsupported runtime")
 	}
-	const want = "iOS 18.3 runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --this-boot` to slim the current boot session only"
+	const want = "iOS 18.3 runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --no-reboot` to slim the current boot session only"
 	if err == nil || err.Error() != want {
 		t.Fatalf("ensure error = %v, want %q", err, want)
 	}

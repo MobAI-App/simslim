@@ -31,7 +31,7 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 			return false, err
 		}
 		if !PersistentOverridesSupported(d.OSVersion) {
-			return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --this-boot` to slim the current boot session only", d.OSVersion)
+			return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --no-reboot` to slim the current boot session only", d.OSVersion)
 		}
 	}
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
@@ -100,14 +100,14 @@ func EnableSlim(ctx context.Context, set, udid string, p Profile, report Reporte
 	return ensure(ctx, set, udid, p.Desired(), report)
 }
 
-// EnableSlimThisBoot slims the running boot session without a reboot: each
+// EnableSlimNoReboot slims the running boot session without a reboot: each
 // daemon the profile disables is booted out of launchd, and the disable
 // override keeps launchd from respawning it. It works on every runtime, but on
 // runtimes without persistent overrides the simulator comes back stock at its
 // next boot. Live slimming only moves toward more-disabled: managed labels
 // disabled beyond the profile are left alone, because a live re-enable would
 // have to bootstrap each daemon again; `off` restores them with a reboot.
-func EnableSlimThisBoot(ctx context.Context, set, udid string, p Profile, report Reporter) (changed bool, err error) {
+func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report Reporter) (changed bool, err error) {
 	desired := p.Desired()
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
 	if err := BootAndWait(ctx, set, udid); err != nil {

@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// TestEnableSlimThisBootNeverReboots drives EnableSlimThisBoot against a fake
+// TestEnableSlimNoRebootNeverReboots drives EnableSlimNoReboot against a fake
 // xcrun on an iOS 18.3 device: every profiled label gets a disable and a
 // bootout, including com.apple.b whose override already exists (a previous run
 // may have failed before booting it out), a bootout of an already-missing
 // service (exit 3) counts as done, and no shutdown or second boot ever happens.
-func TestEnableSlimThisBootNeverReboots(t *testing.T) {
+func TestEnableSlimNoRebootNeverReboots(t *testing.T) {
 	const udid = "00000000-0000-0000-0000-000000000038"
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "xcrun.log")
@@ -45,9 +45,9 @@ esac
 	Categories = []Category{{ID: "t", Name: "t", Labels: []string{"com.apple.a", "com.apple.b"}, ApproxMemoryMB: 1}}
 	defer func() { Categories = saved }()
 
-	changed, err := EnableSlimThisBoot(context.Background(), "default", udid, Profile{}, nil)
+	changed, err := EnableSlimNoReboot(context.Background(), "default", udid, Profile{}, nil)
 	if err != nil || !changed {
-		t.Fatalf("EnableSlimThisBoot = (%t, %v), want (true, nil)", changed, err)
+		t.Fatalf("EnableSlimNoReboot = (%t, %v), want (true, nil)", changed, err)
 	}
 	log, err := os.ReadFile(logPath)
 	if err != nil {

@@ -60,7 +60,7 @@ func newApp() *cli.Command {
 			&cli.StringFlag{Name: "profile", Usage: "apply a JSON profile file (mutually exclusive with --except/--keep)"},
 			&cli.StringFlag{Name: "except", Usage: "comma-separated category IDs to leave fully enabled (see `simslim profiles`)"},
 			&cli.StringFlag{Name: "keep", Usage: "comma-separated launchd labels to keep running"},
-			&cli.BoolFlag{Name: "this-boot", Usage: "stop the daemons in the current boot session without a reboot (works on every runtime; lost at the next reboot on iOS < 18.5)"},
+			&cli.BoolFlag{Name: "no-reboot", Usage: "stop the daemons in the current boot session without a reboot (works on every runtime; lost at the next reboot on iOS < 18.5)"},
 			preserveBootStateFlag("return an initially shutdown simulator to shutdown after reconfiguration"),
 		}, Action: cmdOn},
 		{Name: "off", Flags: []cli.Flag{

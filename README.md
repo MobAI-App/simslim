@@ -68,7 +68,7 @@ simslim list             # simulators and their slim status (--booted to filter)
 simslim profiles         # what a slim boot turns off
 simslim profiles <id>    # the launchd labels in one category
 simslim on <udid>        # slim a simulator and reboot it slim
-simslim on <udid> --this-boot   # slim the current boot session, no reboot
+simslim on <udid> --no-reboot   # slim the current boot session, no reboot
 simslim off <udid>       # put it back to stock
 simslim status <udid>    # managed launchd-label state (not a process count)
 simslim verify <udid> --profile ci.json   # exact profile match; non-zero on drift
@@ -226,13 +226,13 @@ answers "is this simulator in exactly the slim state I configured?". Supports
 
 ### Slimming without a reboot
 
-`simslim on --this-boot` slims the running boot session in place: it disables
+`simslim on --no-reboot` slims the running boot session in place: it disables
 each daemon and then boots it out of launchd, so the process stops now and
 cannot respawn, with no shutdown/boot cycle. It takes the same
 `--profile`/`--except`/`--keep` selection as `on`.
 
 ```sh
-simslim on <udid> --this-boot --profile ci.json
+simslim on <udid> --no-reboot --profile ci.json
 ```
 
 On iOS 18.5 and newer this is simply the faster path; the disable overrides are
@@ -325,7 +325,7 @@ CLI uses. macOS only, since everything runs through `xcrun simctl`.
 The earliest runtime with verified persistence is iOS 18.5. iOS 17.x and 18.3
 accept each `launchctl disable`, but the simulator comes back stock after a
 reboot. `simslim on` rejects runtimes older than 18.5 before booting or changing
-launchd state and points at `--this-boot`, which slims the current boot session
+launchd state and points at `--no-reboot`, which slims the current boot session
 only (see [Slimming without a reboot](#slimming-without-a-reboot)). Supported
 runtimes are still read back after the reboot, and the command fails instead of
 claiming success if any requested override was lost.

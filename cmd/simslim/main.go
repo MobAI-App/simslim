@@ -742,9 +742,9 @@ func cmdShutdown(ctx context.Context, cmd *cli.Command) error {
 
 func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	preserveBootState := cmd.Bool("preserve-boot-state")
-	thisBoot := cmd.Bool("this-boot")
-	if thisBoot && preserveBootState {
-		return fmt.Errorf("--this-boot cannot be combined with --preserve-boot-state: shutting the simulator down discards a this-boot slim")
+	noReboot := cmd.Bool("no-reboot")
+	if noReboot && preserveBootState {
+		return fmt.Errorf("--no-reboot cannot be combined with --preserve-boot-state: shutting the simulator down discards a no-reboot slim")
 	}
 	udid, err := oneUDID(cmd.Args().Slice())
 	if err != nil {
@@ -765,8 +765,8 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, simslim.BootTimeout)
 	defer cancel()
-	if thisBoot {
-		return onThisBoot(tctx, device, p, report)
+	if noReboot {
+		return onNoReboot(tctx, device, p, report)
 	}
 	originallyShutdown := preserveBootState && device.State == "Shutdown"
 
@@ -800,12 +800,12 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// onThisBoot is `on --this-boot`: stop the profile's daemons now, no reboot.
+// onNoReboot is `on --no-reboot`: stop the profile's daemons now, no reboot.
 // The closing line says what the next boot brings, since on iOS < 18.5 the
 // state is gone after a reboot and someone will otherwise report that as a bug.
-func onThisBoot(ctx context.Context, device simslim.Device, p simslim.Profile, report simslim.Reporter) error {
+func onNoReboot(ctx context.Context, device simslim.Device, p simslim.Profile, report simslim.Reporter) error {
 	fmt.Fprintf(os.Stderr, "Slimming %s for this boot session: stopping %d background services without a reboot.\n", device.UDID, len(p.Desired()))
-	changed, err := simslim.EnableSlimThisBoot(ctx, device.Set, device.UDID, p, report)
+	changed, err := simslim.EnableSlimNoReboot(ctx, device.Set, device.UDID, p, report)
 	if err != nil {
 		return err
 	}
@@ -946,7 +946,7 @@ COMMANDS
                        exclusive with --except/--keep
       --except ids     Leave these categories enabled (comma-separated)
       --keep labels    Keep these individual daemons running (comma-separated)
-      --this-boot      Stop the daemons in the current boot session without a
+      --no-reboot      Stop the daemons in the current boot session without a
                        reboot. Works on every runtime, including iOS 17.x and
                        18.3, where it is the only way to slim; there the state
                        is gone at the next reboot

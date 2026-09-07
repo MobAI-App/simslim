@@ -120,7 +120,7 @@ func TestAppFlagParsing(t *testing.T) {
 		{name: "duplicate json rejected", args: []string{"profiles", "--json", "--json", "siri"}, wantError: true},
 		{name: "unknown flag rejected", args: []string{"profiles", "--nope"}, wantError: true},
 		{name: "unknown category rejected", args: []string{"profiles", "does-not-exist"}, wantError: true},
-		{name: "this-boot conflicts with preserve-boot-state", args: []string{"on", "--this-boot", "--preserve-boot-state", "X"}, wantError: true},
+		{name: "no-reboot conflicts with preserve-boot-state", args: []string{"on", "--no-reboot", "--preserve-boot-state", "X"}, wantError: true},
 	}
 
 	for _, tt := range tests {
