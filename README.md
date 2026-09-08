@@ -2,7 +2,7 @@
 
 Run a lot more iOS simulators on one Mac by turning off the background daemons a simulator doesn't need.
 
-A freshly booted iOS simulator starts around 180 background services: Siri, Spotlight indexing, photo analysis, News, wallpaper posters, iCloud sync, and so on. None of it matters when you're using the simulator for development, testing, or CI. simslim switches those services off, which cuts each simulator's memory roughly 4x. On the same laptop you go from a handful of simulators to a screenful.
+A freshly booted iOS simulator starts around 180 background services: Siri, Spotlight indexing, photo analysis, News, wallpaper posters, iCloud sync, and so on. None of it matters when you're using the simulator for development, testing, or CI. simslim switches those services off, which roughly halves to a third of each simulator's memory (see [Numbers](#numbers) below for the exact range by device and runtime). On the same laptop you go from a handful of simulators to a screenful.
 
 https://github.com/user-attachments/assets/f4665e41-43b4-49cd-9388-3da533e9fd7b
 
@@ -10,12 +10,25 @@ https://github.com/user-attachments/assets/f4665e41-43b4-49cd-9388-3da533e9fd7b
 
 ## Numbers
 
-One simulator, booted stock and then slimmed, same device and settle time (M1 Pro, 16 GB):
+Measured with `simslim benchmark --runs 5` across four simulators spanning
+different device classes and iOS runtimes, on an Apple M1 Max running macOS
+26.6.2 / Xcode 26.2 (2026-09-08). Each row is the mean of 5 stock/slim
+measurement pairs; "Ratio" is stock mean ÷ slim mean.
 
-| | Stock | Slim |
-|---|---|---|
-| Processes | 258 | 70 |
-| Memory | 4.0 GB | 0.9 GB |
+| Simulator | iOS | Stock (mean) | Slim (mean) | Ratio |
+|---|---|---|---|---|
+| iPhone 16 Pro | 18.6 | 1.96 GB | 0.87 GB | 2.26x |
+| iPhone 17 Pro | 26.2 | 2.53 GB | 0.99 GB | 2.55x |
+| iPhone 17 Pro | 27.0 | 0.64 GB | 0.31 GB | 2.02x |
+| iPad Pro 13-inch (M5) | 26.4 | 2.24 GB | 0.82 GB | 2.73x |
+| **Fleet total (mean)** | n/a | **7.36 GB** | **3.00 GB** | **2.46x** |
+
+The reduction varies by device and runtime: there's no single multiplier that
+holds everywhere. Reproduce this on your own machine and fleet:
+
+```sh
+simslim benchmark <udid> [<udid> ...] --runs 5
+```
 
 Memory here is phys_footprint, the figure Activity Monitor shows, which counts compressed and swapped pages. That's what decides how many simulators fit before the machine starts swapping. Run `simslim measure <udid>` to see it for any booted simulator.
 
