@@ -49,7 +49,7 @@ func TestSumBenchmark(t *testing.T) {
 		{
 			name: "single device",
 			results: []BenchmarkResult{
-				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
+				{Stock: MemoryStats{Samples: []int64{4000}, MeanBytes: 4000}, Slim: MemoryStats{Samples: []int64{1000}, MeanBytes: 1000}},
 			},
 			wantStock: 4000,
 			wantSlim:  1000,
@@ -57,20 +57,29 @@ func TestSumBenchmark(t *testing.T) {
 		{
 			name: "sums across devices",
 			results: []BenchmarkResult{
-				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
-				{Stock: MemoryStats{MeanBytes: 2000}, Slim: MemoryStats{MeanBytes: 500}},
+				{Stock: MemoryStats{Samples: []int64{4000}, MeanBytes: 4000}, Slim: MemoryStats{Samples: []int64{1000}, MeanBytes: 1000}},
+				{Stock: MemoryStats{Samples: []int64{2000}, MeanBytes: 2000}, Slim: MemoryStats{Samples: []int64{500}, MeanBytes: 500}},
 			},
 			wantStock: 6000,
 			wantSlim:  1500,
 		},
 		{
-			name: "errored device excluded from totals",
+			name: "device with no completed runs excluded from totals",
 			results: []BenchmarkResult{
-				{Stock: MemoryStats{MeanBytes: 4000}, Slim: MemoryStats{MeanBytes: 1000}},
-				{Stock: MemoryStats{MeanBytes: 9999}, Slim: MemoryStats{MeanBytes: 9999}, Error: "boot timed out"},
+				{Stock: MemoryStats{Samples: []int64{4000}, MeanBytes: 4000}, Slim: MemoryStats{Samples: []int64{1000}, MeanBytes: 1000}},
+				{Error: "boot timed out"},
 			},
 			wantStock: 4000,
 			wantSlim:  1000,
+		},
+		{
+			name: "device that errored after completing some runs still counted",
+			results: []BenchmarkResult{
+				{Stock: MemoryStats{Samples: []int64{4000}, MeanBytes: 4000}, Slim: MemoryStats{Samples: []int64{1000}, MeanBytes: 1000}},
+				{Stock: MemoryStats{Samples: []int64{2000, 2200}, MeanBytes: 2100}, Slim: MemoryStats{Samples: []int64{500, 520}, MeanBytes: 510}, Error: "boot timed out on run 3"},
+			},
+			wantStock: 6100,
+			wantSlim:  1510,
 		},
 	}
 

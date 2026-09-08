@@ -39,7 +39,7 @@ func printBenchmark(out simslim.BenchmarkOutput, runs int) {
 	fmt.Printf("%-30s %-10s %-24s %-24s %8s\n", "SIMULATOR", "COLD BOOT", "STOCK", "SLIM", "RATIO")
 	for _, d := range out.Devices {
 		name := truncate(fmt.Sprintf("%s · %s", d.Name, shortUDID(d.UDID)), 30)
-		if d.Error != "" {
+		if d.Error != "" && len(d.Stock.Samples) == 0 {
 			fmt.Printf("%-30s error: %s\n", name, d.Error)
 			continue
 		}
@@ -50,6 +50,9 @@ func printBenchmark(out simslim.BenchmarkOutput, runs int) {
 		fmt.Printf("%-30s %-10s %-24s %-24s %8s\n", name, coldBoot,
 			formatStats(d.Stock, runs), formatStats(d.Slim, runs),
 			benchmarkRatio(d.Stock.MeanBytes, d.Slim.MeanBytes))
+		if d.Error != "" {
+			fmt.Printf("  %d/%d runs completed; stopped early: %s\n", len(d.Stock.Samples), runs, d.Error)
+		}
 	}
 	fmt.Printf("\nFleet total (mean): %s stock -> %s slim (%s)\n",
 		humanBytes(out.TotalStockBytes), humanBytes(out.TotalSlimBytes),

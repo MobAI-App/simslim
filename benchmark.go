@@ -83,10 +83,13 @@ func FleetBenchmark(ctx context.Context, udids []string, runs int, preserveBootS
 }
 
 // sumBenchmark totals mean stock and slim bytes across devices that
-// completed at least one run, skipping any device that recorded an error.
+// completed at least one run, including a device that later recorded an
+// error (e.g. failed partway through a later run, or while restoring) as
+// long as it left behind at least one completed stock/slim sample pair.
+// Devices that errored before completing a single run contribute nothing.
 func sumBenchmark(results []BenchmarkResult) (stockBytes, slimBytes int64) {
 	for _, r := range results {
-		if r.Error != "" {
+		if len(r.Stock.Samples) == 0 {
 			continue
 		}
 		stockBytes += r.Stock.MeanBytes
