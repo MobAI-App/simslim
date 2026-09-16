@@ -252,8 +252,10 @@ set, runs the tests, and deletes the clones when the run ends. The clones are
 created stock, and disable overrides do not survive `simctl clone`, so there is
 no device to slim ahead of time. `simslim watch` closes that gap: it polls the
 device sets and slims each simulator no-reboot the moment it boots, then leaves
-it alone. A clone slimmed a few seconds into a multi-minute run keeps its freed
-memory for the rest of the run.
+it alone until it boots again. A clone slimmed a few seconds into a multi-minute
+run keeps its freed memory for the rest of the run. A failed slim is retried on
+the next scan, and a device that shut down and booted again is slimmed again,
+because below iOS 18.5 a no-reboot slim ends with the boot session.
 
 ```sh
 simslim watch --except web,store &
