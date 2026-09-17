@@ -376,9 +376,10 @@ UDID: SimSlim verifies references to the source you specify.
 `erase`, `delete` and recreate, and "Erase All Content and Settings" still
 produce stock service state, so the simulator's memory climbs back until you
 rerun `simslim on`. A simulator created from a new or updated runtime also
-starts stock. A tar or filesystem snapshot also preserves the profile. Run
-`simslim list` to see current state, or `simslim verify` to check one against a
-specific profile.
+starts stock. The slim state persists across simulator shutdowns and reboots on
+the same Mac. Moving or restoring a simulator onto another Mac does not preserve
+the profile. Run `simslim list` to see current state, or `simslim verify` to
+check one against a specific profile.
 
 ## What you lose
 
