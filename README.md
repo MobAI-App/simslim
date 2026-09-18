@@ -343,6 +343,8 @@ CLI uses. macOS only, since everything runs through `xcrun simctl`.
 
 `simslim on` writes persistent `launchctl disable` entries for the chosen launchd labels into the simulator's own launchd database, then reboots it. The entries stick across reboots, so the simulator comes up slim in a single boot from then on. `simslim off` clears them and reboots back to stock. Your Mac is never touched, only the simulator you point it at, and only services that are safe to disable. Core workflow services such as `sharingd`, plus the handful that wedge a simulator when turned off, are left running.
 
+A simulator that is **already shut down** takes a much faster route: its overrides are written straight to the store `launchd_sim` reads when it starts, so applying them needs neither a `launchctl` call per daemon nor a reboot — the simulator simply boots slim the first time. On an iPhone 17 Pro / iOS 26.5 that turns a 2m14s first slim into 33s, nearly all of it the boot itself. The booted simulator is still read back afterwards, and if a runtime ignores the store `simslim` falls back to the `launchctl` path rather than report a slim simulator that isn't one.
+
 The earliest runtime with verified persistence is iOS 18.5. iOS 17.x and 18.3
 accept each `launchctl disable`, but the simulator comes back stock after a
 reboot. `simslim on` rejects runtimes older than 18.5 before booting or changing

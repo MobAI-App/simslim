@@ -768,9 +768,14 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	if noReboot {
 		return onNoReboot(tctx, device, p, report)
 	}
-	originallyShutdown := preserveBootState && device.State == "Shutdown"
+	startedShutdown := device.State == "Shutdown"
+	originallyShutdown := preserveBootState && startedShutdown
 
-	fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.Desired()))
+	if startedShutdown {
+		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services while it is off, then booting it slim.\n", udid, len(p.Desired()))
+	} else {
+		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.Desired()))
+	}
 	changed, operationErr := simslim.EnableSlim(tctx, device.Set, udid, p, report)
 	if originallyShutdown {
 		shutdownErr := returnToShutdown(ctx, device.Set, udid)
@@ -785,9 +790,12 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 		return operationErr
 	}
 	if changed {
-		if originallyShutdown {
+		switch {
+		case originallyShutdown:
 			fmt.Println("Done. Simulator reconfigured slim and returned to shutdown.")
-		} else {
+		case startedShutdown:
+			fmt.Println("Done. Simulator reconfigured slim and booted.")
+		default:
 			fmt.Println("Done. Simulator reconfigured and rebooted slim.")
 		}
 	} else {
@@ -847,8 +855,13 @@ func cmdOff(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	originallyShutdown := preserveBootState && device.State == "Shutdown"
-	fmt.Fprintf(os.Stderr, "Restoring %s to stock. The simulator will reboot to apply the changes.\n", udid)
+	startedShutdown := device.State == "Shutdown"
+	originallyShutdown := preserveBootState && startedShutdown
+	if startedShutdown {
+		fmt.Fprintf(os.Stderr, "Restoring %s to stock while it is off, then booting it.\n", udid)
+	} else {
+		fmt.Fprintf(os.Stderr, "Restoring %s to stock. The simulator will reboot to apply the changes.\n", udid)
+	}
 	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	tctx, cancel := context.WithTimeout(ctx, simslim.BootTimeout)
 	defer cancel()
@@ -866,9 +879,12 @@ func cmdOff(ctx context.Context, cmd *cli.Command) error {
 		return operationErr
 	}
 	if changed {
-		if originallyShutdown {
+		switch {
+		case originallyShutdown:
 			fmt.Println("Done. All daemons re-enabled and simulator returned to shutdown.")
-		} else {
+		case startedShutdown:
+			fmt.Println("Done. All daemons re-enabled and simulator booted.")
+		default:
 			fmt.Println("Done. All daemons re-enabled and simulator rebooted.")
 		}
 	} else {

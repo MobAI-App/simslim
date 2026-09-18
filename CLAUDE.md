@@ -76,6 +76,20 @@ and reads the state back before reporting persistence. `on` disables the profile
 disable` + `launchctl bootout` per label so the daemon stops in the current boot
 session, which is the only slimming possible on runtimes older than iOS 18.5.
 
+**The offline fast path.** When the target is **shut down** on a runtime with
+persistent overrides, `ensureOffline` takes over: `disabled_store.go` writes the
+overrides directly and boots the device once, already slim, skipping every
+`launchctl` spawn *and* the reboot that would apply them (measured 2m14s → 33s for
+170 labels). `launchd_sim` is a *host* process, so that store is not in the
+device's data directory — it sits beside the device's `launchd.log` in
+`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist`, keyed
+only by UDID. It is an undocumented CoreSimulator detail, so treat it as
+best-effort: writes **merge** (the runtime keeps its own explicit-enable entries
+there, and unmanaged labels are never simslim's business), the booted device is
+always read back with `print-disabled` rather than trusted, and anything that
+does not work out returns `errOfflineIneffective` so `ensure` falls back to the
+`launchctl` path. A store problem must never surface as a command failure.
+
 **simctl wrapper.** `simctl.go` is the only place that shells out to
 `xcrun simctl` (list/boot/shutdown/clone/erase/delete/spawn). `measure.go` sums
 `phys_footprint` across the simulator's launchd process tree (via `pgrep`/`ps`/`top`)

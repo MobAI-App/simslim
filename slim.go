@@ -2,6 +2,7 @@ package simslim
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -22,17 +23,27 @@ func (r Reporter) report(msg string) {
 // The disabled overrides persist in the device's launchd DB, so once set a slim
 // device comes up slim in a single boot; a reboot only happens when the state
 // actually changes. A non-empty profile is rejected before boot on runtimes
-// without persistent overrides. Each slow phase reports progress so the caller
+// without persistent overrides. A device that is already shut down takes the far
+// cheaper ensureOffline route. Each slow phase reports progress so the caller
 // can show the user that a multi-minute reconfigure is still working.
 func ensure(ctx context.Context, set, udid string, desired map[string]bool, report Reporter) (changed bool, err error) {
-	if len(desired) > 0 {
-		d, err := FindDevice(ctx, udid, set)
-		if err != nil {
-			return false, err
+	d, err := FindDevice(ctx, udid, set)
+	if err != nil {
+		return false, err
+	}
+	persistent := PersistentOverridesSupported(d.OSVersion)
+	if len(desired) > 0 && !persistent {
+		return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --no-reboot` to slim the current boot session only", d.OSVersion)
+	}
+	// A shutdown device can be reconfigured by writing the overrides launchd_sim
+	// reads when it starts, which skips both the per-label launchctl spawns and
+	// the reboot that would apply them: minutes become seconds.
+	if d.State == "Shutdown" && persistent {
+		changed, err := ensureOffline(ctx, set, udid, desired, report)
+		if !errors.Is(err, errOfflineIneffective) {
+			return changed, err
 		}
-		if !PersistentOverridesSupported(d.OSVersion) {
-			return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --no-reboot` to slim the current boot session only", d.OSVersion)
-		}
+		report.report("Could not apply the changes while the simulator was off; reconfiguring it while booted instead...")
 	}
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
 	if err := BootAndWait(ctx, set, udid); err != nil {
@@ -74,6 +85,45 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 	}
 	return true, nil
 }
+
+// ensureOffline reaches the desired state on a shutdown device by writing its
+// launchd overrides directly, then boots it once — already slim. That replaces a
+// boot, one launchctl spawn per label, and a reboot with a single boot. The
+// state is read back from the booted device rather than trusted: the store is a
+// private CoreSimulator detail, so anything that stops it from working returns
+// errOfflineIneffective and the caller takes the supported path instead.
+func ensureOffline(ctx context.Context, set, udid string, desired map[string]bool, report Reporter) (changed bool, err error) {
+	current, err := readDisabledStore(udid)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", errOfflineIneffective, err)
+	}
+	toDisable, toEnable := delta(current, desired, managedSet())
+	changed = len(toDisable) > 0 || len(toEnable) > 0
+	if changed {
+		report.report(fmt.Sprintf("Reconfiguring %d background services while the simulator is off...", len(toDisable)+len(toEnable)))
+		if err := writeDisabledStore(udid, toDisable, toEnable); err != nil {
+			return false, fmt.Errorf("%w: %v", errOfflineIneffective, err)
+		}
+	}
+	report.report("Booting the simulator (a first boot can take up to a minute)...")
+	if err := BootAndWait(ctx, set, udid); err != nil {
+		return changed, err
+	}
+	after, err := readDisabled(ctx, set, udid)
+	if err != nil {
+		return changed, err
+	}
+	if lost := countLost(after, desired, managedSet()); lost > 0 {
+		return changed, fmt.Errorf("%d of %d offline overrides were not honoured at boot: %w", lost, len(toDisable)+len(toEnable), errOfflineIneffective)
+	}
+	return changed, nil
+}
+
+// errOfflineIneffective means the store was written but the booted device did
+// not come up in the desired state. The store is an undocumented CoreSimulator
+// detail, so a runtime is always free to ignore it; callers treat this as "take
+// the supported path instead", never as a failure.
+var errOfflineIneffective = errors.New("offline launchd overrides not honoured")
 
 // countLost reports how many of the desired managed transitions are not
 // reflected in the state read back after the reboot.
