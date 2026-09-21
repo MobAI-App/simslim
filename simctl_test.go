@@ -1,9 +1,12 @@
 package simslim
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -33,31 +36,6 @@ func TestNormalizeSimulatorName(t *testing.T) {
 				t.Errorf("NormalizeSimulatorName() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestParseBatchOK(t *testing.T) {
-	output := strings.Join([]string{
-		"Warning: Please switch to user/foreground/com.apple.siriactionsd service identifier (rdar://78126471)",
-		"simslim-ok com.apple.siriactionsd",
-		"simslim-fail com.apple.assistantd",
-		"  simslim-ok com.apple.suggestd",
-		"simslim-ok ",
-		"unrelated noise",
-		"",
-	}, "\n")
-	got := parseBatchOK(output)
-	want := map[string]bool{
-		"com.apple.siriactionsd": true,
-		"com.apple.suggestd":     true,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("parseBatchOK() = %v, want %v", got, want)
-	}
-	for label := range want {
-		if !got[label] {
-			t.Errorf("parseBatchOK() missing %q", label)
-		}
 	}
 }
 
@@ -198,5 +176,62 @@ func TestResetClonedLaunchServicesAtRejectsSymlink(t *testing.T) {
 	err := resetClonedLaunchServicesAt(dataDirectory)
 	if err == nil || !strings.Contains(err.Error(), "not a real directory") {
 		t.Fatalf("resetClonedLaunchServicesAt() error = %v, want symlink rejection", err)
+	}
+}
+
+// TestApplyDeltaRunsTransitionsConcurrentlyButBounded drives applyDelta
+// against a fake xcrun that records how many spawns are in flight while it
+// works. The peak proves both halves of the contract: transitions really do
+// overlap (the whole point of the pool), and never more than spawnWorkers of
+// them at once, so a simulator still settling after a first boot is not
+// hammered.
+func TestApplyDeltaRunsTransitionsConcurrentlyButBounded(t *testing.T) {
+	dir := t.TempDir()
+	inFlight := filepath.Join(dir, "inflight")
+	peaks := filepath.Join(dir, "peaks")
+	if err := os.Mkdir(inFlight, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Each spawn marks itself present, records how many peers it sees, holds
+	// long enough for the rest of its wave to arrive, then leaves.
+	script := `#!/bin/sh
+: > "$SIMSLIM_INFLIGHT/$$"
+ls "$SIMSLIM_INFLIGHT" | wc -l >> "$SIMSLIM_PEAKS"
+sleep 0.2
+rm -f "$SIMSLIM_INFLIGHT/$$"
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(dir, "xcrun"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SIMSLIM_INFLIGHT", inFlight)
+	t.Setenv("SIMSLIM_PEAKS", peaks)
+
+	labels := make([]string, 3*spawnWorkers)
+	for i := range labels {
+		labels[i] = fmt.Sprintf("com.apple.probe%d", i)
+	}
+	if err := applyDelta(context.Background(), "default", "UDID", labels, nil, "disable", nil); err != nil {
+		t.Fatalf("applyDelta: %v", err)
+	}
+
+	log, err := os.ReadFile(peaks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peak := 0
+	for _, line := range strings.Fields(string(log)) {
+		n, err := strconv.Atoi(line)
+		if err != nil {
+			t.Fatalf("unparsable peak %q: %v", line, err)
+		}
+		peak = max(peak, n)
+	}
+	if peak <= 1 {
+		t.Errorf("peak concurrency = %d, want transitions to overlap", peak)
+	}
+	if peak > spawnWorkers {
+		t.Errorf("peak concurrency = %d, want at most spawnWorkers (%d)", peak, spawnWorkers)
 	}
 }

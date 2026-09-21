@@ -10,20 +10,26 @@ import (
 )
 
 // fakeXcrunScript logs every call, answers the device lookup, and hands any
-// `simctl spawn` straight to the stub launchctl below, so the real batchScript
-// runs as written instead of being matched by a pattern.
+// `simctl spawn` straight to the stub launchctl below, so the transitions run
+// as written instead of being matched by a pattern.
 const fakeXcrunScript = `#!/bin/sh
 printf '%s\n' "$*" >> "$SIMSLIM_XCRUN_LOG"
 case "$1 $2" in
   "simctl list")
-    printf '%s\n' "$SIMSLIM_TEST_DEVICES"
+    printf '%s\n' "$SIMSLIM_TEST_DEVICES" | sed "s/@STATE@/$(cat "$SIMSLIM_TEST_STATE")/"
     ;;
   "simctl spawn")
     shift 3
     export DYLD_ROOT_PATH="$SIMULATOR_ROOT"
     exec "$@"
     ;;
-  "simctl boot"|"simctl bootstatus"|"simctl shutdown")
+  "simctl boot")
+    printf Booted > "$SIMSLIM_TEST_STATE"
+    ;;
+  "simctl shutdown")
+    printf Shutdown > "$SIMSLIM_TEST_STATE"
+    ;;
+  "simctl bootstatus")
     ;;
   *)
     exit 99
@@ -32,12 +38,10 @@ esac
 `
 
 // fakeLaunchctlScript is a stand-in launchd. Live overrides are one file per
-// label, so the concurrent waves in batchScript cannot race each other, and
+// label, so applyDelta's concurrent workers cannot race each other, and
 // print-disabled renders the union of those and the offline store — which is
 // how the real launchd_sim behaves, having read the store when it started.
 // SIMSLIM_TEST_IGNORE_STORE models a runtime that does not honour the store.
-// It cannot assert on DYLD_ROOT_PATH the way the real launchctl does: dyld
-// strips DYLD_* when exec'ing /bin/sh, so a shell stub never sees it.
 const fakeLaunchctlScript = `#!/bin/sh
 label=${2#system/}
 case "$1" in
@@ -72,15 +76,21 @@ func fakeSimctl(t *testing.T, udid, runtime, state string) string {
 		}
 	}
 	logPath := filepath.Join(dir, "xcrun.log")
+	// @STATE@ is substituted from the state file, so a boot or shutdown the
+	// code under test issues is reflected by the next `simctl list`.
 	devices := `{"devices":{"com.apple.CoreSimulator.SimRuntime.` + runtime + `":[{"udid":"` + udid +
-		`","name":"Offline Probe","state":"` + state + `","isAvailable":true,"dataPath":"` + dir + `/data"}]}}`
+		`","name":"Offline Probe","state":"@STATE@","isAvailable":true,"dataPath":"` + dir + `/data"}]}}`
+	statePath := filepath.Join(dir, "state")
+	if err := os.WriteFile(statePath, []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIMSLIM_TEST_STATE", statePath)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SIMSLIM_XCRUN_LOG", logPath)
 	t.Setenv("SIMSLIM_TEST_DEVICES", devices)
 	t.Setenv("SIMSLIM_TEST_STORE", disabledStorePath(udid))
 	t.Setenv("SIMSLIM_TEST_LIVE", filepath.Join(dir, "live"))
-	// simctl exports this into a spawned process; batchScript relies on it to
-	// restore DYLD_ROOT_PATH, and the stub launchctl insists on it.
+	// simctl exports this into a spawned process alongside DYLD_ROOT_PATH.
 	t.Setenv("SIMULATOR_ROOT", dir+"/runtime")
 	return logPath
 }
@@ -187,5 +197,64 @@ func TestEnsureFallsBackToLaunchctlWhenTheRuntimeIgnoresTheStore(t *testing.T) {
 	calls := strings.Join(xcrunCalls(t, logPath), "\n")
 	if !strings.Contains(calls, "launchctl") || !strings.Contains(calls, "simctl shutdown "+udid) {
 		t.Errorf("expected a fallback to launchctl plus a reboot, got:\n%s", calls)
+	}
+}
+
+func TestEnsureSlimsABootedDeviceThroughTheOfflineStore(t *testing.T) {
+	const udid = "00000000-0000-0000-0000-0000000000E4"
+	useTempStoreRoot(t)
+	logPath := fakeSimctl(t, udid, "iOS-26-5", "Booted")
+	labels := twoSlimmableLabels(t)
+
+	changed, err := ensure(context.Background(), "default", udid, map[string]bool{labels[0]: true, labels[1]: true}, nil)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if !changed {
+		t.Error("ensure reported no change after slimming a stock device")
+	}
+
+	// A booted device owes a shutdown and a boot either way, so spending them
+	// first buys the whole offline path: no launchctl transition at all.
+	want := []string{
+		"simctl list devices -j",
+		"simctl spawn " + udid + " launchctl print-disabled system",
+		"simctl shutdown " + udid,
+		"simctl list devices -j",
+		"simctl boot " + udid,
+		"simctl bootstatus " + udid + " -b",
+		"simctl spawn " + udid + " launchctl print-disabled system",
+	}
+	if got := xcrunCalls(t, logPath); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("xcrun calls =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestEnsureLeavesAnAlreadySlimBootedDeviceAlone(t *testing.T) {
+	const udid = "00000000-0000-0000-0000-0000000000E5"
+	useTempStoreRoot(t)
+	logPath := fakeSimctl(t, udid, "iOS-26-5", "Booted")
+	labels := twoSlimmableLabels(t)
+	desired := map[string]bool{labels[0]: true, labels[1]: true}
+	if err := writeDisabledStore(udid, labels, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := ensure(context.Background(), "default", udid, desired, nil)
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if changed {
+		t.Error("ensure reported a change on a device that already matched the profile")
+	}
+
+	// Reading the live state is enough to prove there is nothing to do; a
+	// matching profile must not cost a shutdown or a reboot.
+	want := []string{
+		"simctl list devices -j",
+		"simctl spawn " + udid + " launchctl print-disabled system",
+	}
+	if got := xcrunCalls(t, logPath); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("xcrun calls =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

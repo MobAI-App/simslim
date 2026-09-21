@@ -69,18 +69,23 @@ preflight. `features_test.go` asserts every feature label is slimmable.
 `slim.go`'s `ensure()` rejects a non-empty slim profile on runtimes older than
 iOS 18.5 before booting or mutating the device, then reads the currently disabled
 labels, computes a `delta` against the desired set, and applies the changes with
-`launchctl disable/enable` run inside the simulator via `simctl spawn`. It reboots
+`launchctl disable/enable` run inside the simulator via `simctl spawn`, a pool of
+`spawnWorkers` (8) at a time. It reboots
 and reads the state back before reporting persistence. `on` disables the profile;
 `off` remains available on every runtime and re-enables the whole managed set.
 `EnableSlimNoReboot` (`on --no-reboot`) skips the reboot: it runs `launchctl
 disable` + `launchctl bootout` per label so the daemon stops in the current boot
 session, which is the only slimming possible on runtimes older than iOS 18.5.
 
-**The offline fast path.** When the target is **shut down** on a runtime with
-persistent overrides, `ensureOffline` takes over: `disabled_store.go` writes the
-overrides directly and boots the device once, already slim, skipping every
-`launchctl` spawn *and* the reboot that would apply them (measured 2m14s → 33s for
-170 labels). `launchd_sim` is a *host* process, so that store is not in the
+**The offline fast path.** On a runtime with persistent overrides `ensureOffline`
+takes over: `disabled_store.go` writes the overrides directly and boots the
+device once, already slim, skipping every `launchctl` spawn *and* the reboot that
+would apply them (measured 2m14s → 33s for 170 labels). A **booted** device gets
+there too — an override only takes effect at the next boot, so `ensure` reads its
+live state, returns early when the profile already matches, and otherwise spends
+the shutdown the device already owed before handing off. There is no shell inside
+any iOS runtime (`RuntimeRoot/bin` holds only `df` and `launchctl`), so batching
+transitions through a spawned `/bin/sh` is not an option; the pool is. `launchd_sim` is a *host* process, so that store is not in the
 device's data directory — it sits beside the device's `launchd.log` in
 `/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist`, keyed
 only by UDID. It is an undocumented CoreSimulator detail, so treat it as

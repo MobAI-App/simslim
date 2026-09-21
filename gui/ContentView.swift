@@ -63,7 +63,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Slim", systemImage: "minus.circle")
           }
-          .disabled(model.selectionCount == 0 || model.isBusy)
+          .disabled(model.selectionCount == 0 || model.isSelectionBusy)
           .help("Apply the selected service profile")
         }
 
@@ -73,7 +73,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Unslim", systemImage: "plus.circle")
           }
-          .disabled(model.selectionCount == 0 || model.isBusy)
+          .disabled(model.selectionCount == 0 || model.isSelectionBusy)
           .help("Restore all SimSlim-managed services")
         }
       } else {
@@ -83,7 +83,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Clean Disk", systemImage: "externaldrive.badge.xmark")
           }
-          .disabled(!model.canCleanDiskSelection || model.isBusy)
+          .disabled(!model.canCleanDiskSelection || model.isSelectionBusy)
           .help("Permanently clean the selected disk categories")
         }
       }
@@ -99,7 +99,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Clone", systemImage: "plus.square.on.square")
         }
-        .disabled(singleSelectedDevice == nil || model.isBusy)
+        .disabled(singleSelectedDevice == nil || model.isSelectionBusy)
         .help("Clone for backup or general-purpose use")
 
         Button(role: .destructive) {
@@ -107,7 +107,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Erase", systemImage: "eraser")
         }
-        .disabled(model.selectionCount == 0 || model.isBusy)
+        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
         .help("Erase Simulator")
 
         Button(role: .destructive) {
@@ -115,7 +115,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Delete", systemImage: "trash")
         }
-        .disabled(model.selectionCount == 0 || model.isBusy)
+        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
         .help("Delete Simulator")
       }
 
@@ -131,7 +131,8 @@ struct ContentView: View {
           ToolbarActionLabel("Boot", systemImage: "play.fill")
         }
         .disabled(
-          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == true || model.isBusy
+          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == true
+            || model.isSelectionBusy
         )
         .help("Boot Simulator")
 
@@ -142,7 +143,8 @@ struct ContentView: View {
           ToolbarActionLabel("Kill", systemImage: "stop.fill")
         }
         .disabled(
-          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == false || model.isBusy
+          singleSelectedDevice == nil || singleSelectedDevice?.isBooted == false
+            || model.isSelectionBusy
         )
         .help("Shut Down Simulator")
 
@@ -152,7 +154,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Rename", systemImage: "pencil")
         }
-        .disabled(singleSelectedDevice == nil || model.isBusy)
+        .disabled(singleSelectedDevice == nil || model.isSelectionBusy)
         .help("Rename Simulator")
       }
 
@@ -280,7 +282,9 @@ struct ContentView: View {
           ProgressView(value: progress.fraction)
             .progressViewStyle(.linear)
           HStack {
-            Text("\(progress.action) \(progress.currentName)…")
+            Text(progress.runningText)
+              .lineLimit(1)
+              .truncationMode(.tail)
             Spacer()
             Text("\(progress.completed) of \(progress.total)")
               .monospacedDigit()
@@ -819,7 +823,7 @@ private struct ProfileSidebar: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .disabled(model.selectionCount == 0 || model.isBusy)
+        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
         .help("Refresh disk usage for the selected simulators")
       }
 
@@ -1254,7 +1258,7 @@ private struct SimulatorRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(model.isBusy)
+        .disabled(model.isBusy(device))
 
         HStack(spacing: 10) {
           Image(systemName: "iphone")
@@ -1430,7 +1434,7 @@ private struct SimulatorRow: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .disabled(model.isBusy)
+        .disabled(model.isBusy(device))
         .frame(width: 28)
       }
 

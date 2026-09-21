@@ -23,9 +23,10 @@ func (r Reporter) report(msg string) {
 // The disabled overrides persist in the device's launchd DB, so once set a slim
 // device comes up slim in a single boot; a reboot only happens when the state
 // actually changes. A non-empty profile is rejected before boot on runtimes
-// without persistent overrides. A device that is already shut down takes the far
-// cheaper ensureOffline route. Each slow phase reports progress so the caller
-// can show the user that a multi-minute reconfigure is still working.
+// without persistent overrides. On a runtime that persists them the device
+// takes the far cheaper ensureOffline route, whatever state it starts in. Each
+// slow phase reports progress so the caller can show the user that a
+// multi-minute reconfigure is still working.
 func ensure(ctx context.Context, set, udid string, desired map[string]bool, report Reporter) (changed bool, err error) {
 	d, err := FindDevice(ctx, udid, set)
 	if err != nil {
@@ -38,10 +39,33 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 	// A shutdown device can be reconfigured by writing the overrides launchd_sim
 	// reads when it starts, which skips both the per-label launchctl spawns and
 	// the reboot that would apply them: minutes become seconds.
+	booted := d.State == "Booted"
+	if booted && persistent {
+		// An override only takes effect at the next boot, so a booted device
+		// already owes us a shutdown and a boot. Spending them up front, before
+		// touching launchd, makes it a shutdown device and lets the store
+		// replace every launchctl spawn for the same two state changes.
+		live, err := readDisabled(ctx, set, udid)
+		if err != nil {
+			return false, err
+		}
+		if toDisable, toEnable := delta(live, desired, managedSet()); len(toDisable) == 0 && len(toEnable) == 0 {
+			return false, nil
+		}
+		report.report("Shutting the simulator down to reconfigure it offline...")
+		if err := Shutdown(ctx, set, udid); err != nil {
+			return false, fmt.Errorf("shutdown before reconfigure: %w", err)
+		}
+		if err := WaitShutdown(ctx, set, udid, ShutdownTimeout); err != nil {
+			return false, err
+		}
+		d.State = "Shutdown"
+	}
 	if d.State == "Shutdown" && persistent {
 		changed, err := ensureOffline(ctx, set, udid, desired, report)
 		if !errors.Is(err, errOfflineIneffective) {
-			return changed, err
+			// A device that started booted only gets here with a real delta.
+			return changed || booted, err
 		}
 		report.report("Could not apply the changes while the simulator was off; reconfiguring it while booted instead...")
 	}

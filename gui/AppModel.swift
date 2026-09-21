@@ -42,9 +42,31 @@ final class AppModel: ObservableObject {
     }
   }
 
+  /// True while anything at all is in flight. Controls that edit the shared
+  /// profile or reload the whole table use this; controls that act on
+  /// simulators use the per-device form below, so work on one simulator never
+  /// disables the controls for another.
   var isBusy: Bool {
     isRefreshing || batchProgress != nil || !activeOperations.isEmpty
   }
+
+  /// A simulator is busy once an operation has reserved it. Batches reserve
+  /// every device they will touch before the first one starts, so a reservation
+  /// is a reliable answer even for a device still queued behind others.
+  func isBusy(_ device: SimulatorDevice) -> Bool {
+    isRefreshing || activeOperations[device.udid] != nil
+  }
+
+  func isBusy(_ devices: [SimulatorDevice]) -> Bool {
+    isRefreshing || devices.contains { activeOperations[$0.udid] != nil }
+  }
+
+  var isSelectionBusy: Bool { isBusy(selectedDevices) }
+
+  /// How many simulators a batch reconfigures at once. Each one drives a
+  /// `simslim` subprocess that boots and reboots a simulator, so a small
+  /// window overlaps the waiting without overloading CoreSimulator.
+  private static let heavyOperationLimit = 2
 
   /// Labels kept enabled by a kept category or an individual keep. Categories
   /// may share labels, so a shared label is kept when any of its categories is.
@@ -280,54 +302,41 @@ final class AppModel: ObservableObject {
   }
 
   func cleanDisk(_ devices: [SimulatorDevice], categoryIDs: Set<String>) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty, !devices.isEmpty else {
+    guard let backend, batchProgress == nil, !isBusy(devices), !devices.isEmpty else {
       return
     }
     let cleanableIDs = Set(diskCleanupCategories.filter(\.canClean).map(\.id))
     let selectedIDs = categoryIDs.intersection(cleanableIDs)
     guard !selectedIDs.isEmpty else { return }
-    var failures = 0
 
-    for (index, device) in devices.enumerated() {
-      batchProgress = BatchProgress(
-        completed: index,
-        total: devices.count,
-        currentName: device.name,
-        action: "Cleaning"
-      )
-      setOperation("Cleaning disk data…", for: device.udid)
-      record(.info, "Cleaning disk data from \(device.name)")
-
+    let failures = await runConcurrently(
+      action: "Cleaning", devices: devices, reservation: "Waiting to start…"
+    ) { [weak self] device in
+      guard let self else { return false }
+      self.setOperation("Cleaning disk data…", for: device.udid)
+      self.record(.info, "Cleaning disk data from \(device.name)")
       do {
         let result = try await backend.cleanDisk(
           udid: device.udid,
           categoryIDs: selectedIDs,
-          preserveBootState: preserveBootState
+          preserveBootState: self.preserveBootState
         )
-        diskCleanupPlans.removeValue(forKey: device.udid)
-        record(.success, "Cleaned \(device.name): reclaimed \(result.reclaimedText)")
+        self.diskCleanupPlans.removeValue(forKey: device.udid)
+        self.record(.success, "Cleaned \(device.name): reclaimed \(result.reclaimedText)")
+        return true
       } catch {
-        failures += 1
-        recordFailure(
+        self.recordFailure(
           "Could not clean \(device.name): \(error.localizedDescription)", present: false)
+        return false
       }
-
-      clearOperation(for: device.udid)
-      batchProgress = BatchProgress(
-        completed: index + 1,
-        total: devices.count,
-        currentName: device.name,
-        action: "Cleaning"
-      )
     }
 
-    batchProgress = nil
     await refresh()
     finishBatch(action: "Disk cleanup", total: devices.count, failures: failures)
   }
 
   func measure(_ device: SimulatorDevice) async {
-    guard let backend, device.isBooted, activeOperations[device.udid] == nil else { return }
+    guard let backend, device.isBooted, !isBusy(device) else { return }
     setOperation("Measuring memory…", for: device.udid)
     defer { clearOperation(for: device.udid) }
 
@@ -364,7 +373,7 @@ final class AppModel: ObservableObject {
   }
 
   func cloneSimulator(_ device: SimulatorDevice, named rawName: String) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    guard let backend, !isBusy(device) else { return }
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     setOperation("Cloning apps, data, and service profile…", for: device.udid)
     record(.info, "Cloning \(device.name) as \(name)")
@@ -388,7 +397,7 @@ final class AppModel: ObservableObject {
   }
 
   func renameSimulator(_ device: SimulatorDevice, to rawName: String) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    guard let backend, !isBusy(device) else { return }
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     setOperation("Renaming simulator…", for: device.udid)
     record(.info, "Renaming \(device.name) to \(name)")
@@ -413,7 +422,7 @@ final class AppModel: ObservableObject {
   }
 
   func bootSimulator(_ device: SimulatorDevice) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    guard let backend, !isBusy(device) else { return }
     setOperation("Booting simulator…", for: device.udid)
     record(.info, "Booting \(device.name)")
     defer { clearOperation(for: device.udid) }
@@ -428,7 +437,7 @@ final class AppModel: ObservableObject {
   }
 
   func shutdownSimulator(_ device: SimulatorDevice) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty else { return }
+    guard let backend, !isBusy(device) else { return }
     setOperation("Shutting down simulator…", for: device.udid)
     record(.info, "Shutting down \(device.name)")
     defer { clearOperation(for: device.udid) }
@@ -450,34 +459,18 @@ final class AppModel: ObservableObject {
   private func runBatch(action: String, devices snapshot: [SimulatorDevice], restoreToStock: Bool)
     async
   {
-    guard batchProgress == nil, activeOperations.isEmpty, !snapshot.isEmpty else { return }
-    var failures = 0
+    guard batchProgress == nil, !isBusy(snapshot), !snapshot.isEmpty else { return }
 
-    for (index, device) in snapshot.enumerated() {
-      batchProgress = BatchProgress(
-        completed: index,
-        total: snapshot.count,
-        currentName: device.name,
-        action: action
-      )
-
-      let succeeded: Bool
+    let failures = await runConcurrently(
+      action: action, devices: snapshot, reservation: "Waiting to start…"
+    ) { [weak self] device in
+      guard let self else { return false }
       if restoreToStock {
-        succeeded = await restore(device, presentErrors: false)
-      } else {
-        succeeded = await slim(device, presentErrors: false)
+        return await self.restore(device, presentErrors: false)
       }
-      if !succeeded { failures += 1 }
-
-      batchProgress = BatchProgress(
-        completed: index + 1,
-        total: snapshot.count,
-        currentName: device.name,
-        action: action
-      )
+      return await self.slim(device, presentErrors: false)
     }
 
-    batchProgress = nil
     await refresh()
     finishBatch(
       action: restoreToStock ? "Restore" : "Profile update", total: snapshot.count,
@@ -498,36 +491,24 @@ final class AppModel: ObservableObject {
   }
 
   private func analyzeDisk(devices snapshot: [SimulatorDevice]) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty, !snapshot.isEmpty else {
+    guard let backend, batchProgress == nil, !isBusy(snapshot), !snapshot.isEmpty else {
       return
     }
-    var failures = 0
 
-    for (index, device) in snapshot.enumerated() {
-      batchProgress = BatchProgress(
-        completed: index,
-        total: snapshot.count,
-        currentName: device.name,
-        action: "Analyzing"
-      )
-
+    let failures = await runConcurrently(
+      action: "Analyzing", devices: snapshot, reservation: "Analyzing disk usage…"
+    ) { [weak self] device in
+      guard let self else { return false }
       do {
-        diskCleanupPlans[device.udid] = try await backend.diskCleanupPlan(udid: device.udid)
+        self.diskCleanupPlans[device.udid] = try await backend.diskCleanupPlan(udid: device.udid)
+        return true
       } catch {
-        failures += 1
-        recordFailure(
+        self.recordFailure(
           "Could not analyze \(device.name): \(error.localizedDescription)", present: false)
+        return false
       }
-
-      batchProgress = BatchProgress(
-        completed: index + 1,
-        total: snapshot.count,
-        currentName: device.name,
-        action: "Analyzing"
-      )
     }
 
-    batchProgress = nil
     if failures == 0 {
       record(.success, "Disk analysis finished for all \(snapshot.count) selected simulators")
     } else {
@@ -538,52 +519,39 @@ final class AppModel: ObservableObject {
   private func runManagementBatch(
     _ action: SimulatorManagementBatch, devices snapshot: [SimulatorDevice]
   ) async {
-    guard let backend, batchProgress == nil, activeOperations.isEmpty, !snapshot.isEmpty else {
+    guard let backend, batchProgress == nil, !isBusy(snapshot), !snapshot.isEmpty else {
       return
     }
-    var failures = 0
 
-    for (index, device) in snapshot.enumerated() {
-      batchProgress = BatchProgress(
-        completed: index,
-        total: snapshot.count,
-        currentName: device.name,
-        action: action.progressTitle
-      )
-      setOperation(action.operationTitle, for: device.udid)
-      record(.info, "\(action.progressTitle) \(device.name)")
-
+    let failures = await runConcurrently(
+      action: action.progressTitle, devices: snapshot, reservation: action.operationTitle
+    ) { [weak self] device in
+      guard let self else { return false }
+      self.record(.info, "\(action.progressTitle) \(device.name)")
       do {
         switch action {
         case .erase:
           _ = try await backend.erase(udid: device.udid)
-          measurements.removeValue(forKey: device.udid)
-          setCachedDisabled(0, for: device.udid)
+          self.measurements.removeValue(forKey: device.udid)
+          self.setCachedDisabled(0, for: device.udid)
         case .delete:
           _ = try await backend.delete(udid: device.udid)
-          measurements.removeValue(forKey: device.udid)
-          diskSizes.removeValue(forKey: device.udid)
-          diskSizeLoadingUDIDs.remove(device.udid)
-          removeCachedDisabled(for: device.udid)
-          selectedUDIDs.remove(device.udid)
+          self.measurements.removeValue(forKey: device.udid)
+          self.diskSizes.removeValue(forKey: device.udid)
+          self.diskSizeLoadingUDIDs.remove(device.udid)
+          self.removeCachedDisabled(for: device.udid)
+          self.selectedUDIDs.remove(device.udid)
         }
-        record(.success, "\(action.pastTenseTitle) \(device.name)")
+        self.record(.success, "\(action.pastTenseTitle) \(device.name)")
+        return true
       } catch {
-        failures += 1
-        recordFailure(
-          "Could not \(action.verb) \(device.name): \(error.localizedDescription)", present: false)
+        self.recordFailure(
+          "Could not \(action.verb) \(device.name): \(error.localizedDescription)",
+          present: false)
+        return false
       }
-
-      clearOperation(for: device.udid)
-      batchProgress = BatchProgress(
-        completed: index + 1,
-        total: snapshot.count,
-        currentName: device.name,
-        action: action.progressTitle
-      )
     }
 
-    batchProgress = nil
     await refresh()
     finishBatch(action: action.completionTitle, total: snapshot.count, failures: failures)
   }
@@ -628,6 +596,55 @@ final class AppModel: ObservableObject {
         "Could not restore \(device.name): \(error.localizedDescription)", present: presentErrors)
       return false
     }
+  }
+
+  /// Runs `body` for every device with at most `heavyOperationLimit` in
+  /// flight, keeping the batch banner in step and returning the failure count.
+  /// Every device is reserved up front, so the controls for simulators outside
+  /// the batch stay live while it works and nothing else can claim a device
+  /// that is merely queued.
+  private func runConcurrently(
+    action: String,
+    devices snapshot: [SimulatorDevice],
+    reservation: String,
+    body: @escaping @MainActor (SimulatorDevice) async -> Bool
+  ) async -> Int {
+    for device in snapshot {
+      setOperation(reservation, for: device.udid)
+    }
+    var running: [String] = []
+    var completed = 0
+    var failures = 0
+    func publish() {
+      batchProgress = BatchProgress(
+        completed: completed, total: snapshot.count, running: running, action: action)
+    }
+    publish()
+
+    await withTaskGroup(of: (SimulatorDevice, Bool).self) { group in
+      var next = 0
+      func startNext() {
+        guard next < snapshot.count else { return }
+        let device = snapshot[next]
+        next += 1
+        running.append(device.name)
+        group.addTask { @MainActor in (device, await body(device)) }
+      }
+      for _ in 0..<min(Self.heavyOperationLimit, snapshot.count) { startNext() }
+      publish()
+
+      while let (device, succeeded) = await group.next() {
+        completed += 1
+        if !succeeded { failures += 1 }
+        clearOperation(for: device.udid)
+        if let index = running.firstIndex(of: device.name) { running.remove(at: index) }
+        startNext()
+        publish()
+      }
+    }
+
+    batchProgress = nil
+    return failures
   }
 
   private func finishBatch(action: String, total: Int, failures: Int) {

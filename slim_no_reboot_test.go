@@ -29,7 +29,6 @@ case "$*" in
     if [ -f "$SIMSLIM_XCRUN_LOG.applied" ]; then
       printf '\t"%s" => disabled\n' com.apple.a
     fi ;;
-  *"/bin/sh -c "*) exit 0 ;;
   *"launchctl disable system/"*) exit 0 ;;
   *"launchctl bootout system/com.apple.a") : > "$SIMSLIM_XCRUN_LOG.applied"; exit 0 ;;
   *"launchctl bootout system/com.apple.b") echo "Boot-out failed: 3: No such process" >&2; exit 3 ;;
