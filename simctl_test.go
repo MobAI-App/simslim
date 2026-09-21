@@ -192,9 +192,11 @@ func TestApplyDeltaRunsTransitionsConcurrentlyButBounded(t *testing.T) {
 	if err := os.Mkdir(inFlight, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Each spawn marks itself present, records how many peers it sees, holds
-	// long enough for the rest of its wave to arrive, then leaves.
+	// Each spawn logs its arguments, marks itself present, records how many
+	// peers it sees, holds long enough for the rest of its wave to arrive,
+	// then leaves.
 	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$SIMSLIM_XCRUN_LOG"
 : > "$SIMSLIM_INFLIGHT/$$"
 ls "$SIMSLIM_INFLIGHT" | wc -l >> "$SIMSLIM_PEAKS"
 sleep 0.2
@@ -207,6 +209,8 @@ exit 0
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SIMSLIM_INFLIGHT", inFlight)
 	t.Setenv("SIMSLIM_PEAKS", peaks)
+	logPath := filepath.Join(dir, "xcrun.log")
+	t.Setenv("SIMSLIM_XCRUN_LOG", logPath)
 
 	labels := make([]string, 3*spawnWorkers)
 	for i := range labels {
@@ -233,5 +237,24 @@ exit 0
 	}
 	if peak > spawnWorkers {
 		t.Errorf("peak concurrency = %d, want at most spawnWorkers (%d)", peak, spawnWorkers)
+	}
+
+	// Bounding the pool must not cost coverage: every label gets exactly the
+	// one transition it was queued for, whatever order the workers ran in.
+	want := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		want["simctl spawn UDID launchctl disable system/"+l] = true
+	}
+	got := map[string]int{}
+	for _, call := range xcrunCalls(t, logPath) {
+		got[call]++
+	}
+	if len(got) != len(want) {
+		t.Errorf("saw %d distinct transitions, want %d", len(got), len(want))
+	}
+	for call := range want {
+		if got[call] != 1 {
+			t.Errorf("transition %q ran %d times, want exactly 1", call, got[call])
+		}
 	}
 }

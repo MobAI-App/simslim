@@ -63,7 +63,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Slim", systemImage: "minus.circle")
           }
-          .disabled(model.selectionCount == 0 || model.isSelectionBusy)
+          .disabled(model.selectionCount == 0 || !model.canStartBatchOnSelection)
           .help("Apply the selected service profile")
         }
 
@@ -73,7 +73,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Unslim", systemImage: "plus.circle")
           }
-          .disabled(model.selectionCount == 0 || model.isSelectionBusy)
+          .disabled(model.selectionCount == 0 || !model.canStartBatchOnSelection)
           .help("Restore all SimSlim-managed services")
         }
       } else {
@@ -83,7 +83,7 @@ struct ContentView: View {
           } label: {
             ToolbarActionLabel("Clean Disk", systemImage: "externaldrive.badge.xmark")
           }
-          .disabled(!model.canCleanDiskSelection || model.isSelectionBusy)
+          .disabled(!model.canCleanDiskSelection || !model.canStartBatchOnSelection)
           .help("Permanently clean the selected disk categories")
         }
       }
@@ -107,7 +107,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Erase", systemImage: "eraser")
         }
-        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
+        .disabled(model.selectionCount == 0 || !model.canStartBatchOnSelection)
         .help("Erase Simulator")
 
         Button(role: .destructive) {
@@ -115,7 +115,7 @@ struct ContentView: View {
         } label: {
           ToolbarActionLabel("Delete", systemImage: "trash")
         }
-        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
+        .disabled(model.selectionCount == 0 || !model.canStartBatchOnSelection)
         .help("Delete Simulator")
       }
 
@@ -823,7 +823,7 @@ private struct ProfileSidebar: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .disabled(model.selectionCount == 0 || model.isSelectionBusy)
+        .disabled(model.selectionCount == 0 || !model.canStartBatchOnSelection)
         .help("Refresh disk usage for the selected simulators")
       }
 
@@ -1349,12 +1349,14 @@ private struct SimulatorRow: View {
             } label: {
               Label("Slim Simulator", systemImage: "minus.circle")
             }
+            .disabled(model.isBatchRunning)
 
             Button {
               Task { await model.restoreOriginalServices(for: device) }
             } label: {
               Label("Unslim Simulator", systemImage: "plus.circle")
             }
+            .disabled(model.isBatchRunning)
           }
 
           Section("Disk Space") {
@@ -1363,7 +1365,7 @@ private struct SimulatorRow: View {
             } label: {
               Label("Clean Disk Data", systemImage: "externaldrive.badge.xmark")
             }
-            .disabled(!model.canCleanDisk([device]))
+            .disabled(!model.canCleanDisk([device]) || model.isBatchRunning)
           }
 
           Section("Simulator") {
@@ -1421,12 +1423,14 @@ private struct SimulatorRow: View {
             } label: {
               Label("Erase Simulator", systemImage: "eraser")
             }
+            .disabled(model.isBatchRunning)
 
             Button(role: .destructive) {
               managementSheet = .delete([device])
             } label: {
               Label("Delete Simulator", systemImage: "trash")
             }
+            .disabled(model.isBatchRunning)
           }
         } label: {
           Image(systemName: "ellipsis")

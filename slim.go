@@ -41,6 +41,12 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 	// the reboot that would apply them: minutes become seconds.
 	booted := d.State == "Booted"
 	if booted && persistent {
+		// `simctl list` says Booted from the moment the boot starts, so wait
+		// for launchd to be up before asking it anything; on a device that is
+		// really booted this costs a fraction of a second.
+		if err := BootAndWait(ctx, set, udid); err != nil {
+			return false, err
+		}
 		// An override only takes effect at the next boot, so a booted device
 		// already owes us a shutdown and a boot. Spending them up front, before
 		// touching launchd, makes it a shutdown device and lets the store

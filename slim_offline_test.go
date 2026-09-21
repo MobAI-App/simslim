@@ -218,6 +218,8 @@ func TestEnsureSlimsABootedDeviceThroughTheOfflineStore(t *testing.T) {
 	// first buys the whole offline path: no launchctl transition at all.
 	want := []string{
 		"simctl list devices -j",
+		"simctl boot " + udid,
+		"simctl bootstatus " + udid + " -b",
 		"simctl spawn " + udid + " launchctl print-disabled system",
 		"simctl shutdown " + udid,
 		"simctl list devices -j",
@@ -252,6 +254,8 @@ func TestEnsureLeavesAnAlreadySlimBootedDeviceAlone(t *testing.T) {
 	// matching profile must not cost a shutdown or a reboot.
 	want := []string{
 		"simctl list devices -j",
+		"simctl boot " + udid,
+		"simctl bootstatus " + udid + " -b",
 		"simctl spawn " + udid + " launchctl print-disabled system",
 	}
 	if got := xcrunCalls(t, logPath); strings.Join(got, "\n") != strings.Join(want, "\n") {

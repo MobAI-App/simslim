@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
   private var lastKnownDisabled: [String: Int]
   private var diskSizeTask: Task<Void, Never>?
   private var diskReloadRequested = false
+  private var refreshRequested = false
+  private var refreshRequestedWithCategories = false
   private static let stateCacheKey = "lastKnownManagedDisabled"
 
   init() {
@@ -62,6 +64,13 @@ final class AppModel: ObservableObject {
   }
 
   var isSelectionBusy: Bool { isBusy(selectedDevices) }
+
+  /// A batch owns the single progress banner, so only one runs at a time.
+  /// Controls that start one gate on this as well as on their own devices;
+  /// per-device actions (boot, rename, measure) do not, and stay live.
+  var isBatchRunning: Bool { batchProgress != nil }
+
+  var canStartBatchOnSelection: Bool { !isBatchRunning && !isSelectionBusy }
 
   /// How many simulators a batch reconfigures at once. Each one drives a
   /// `simslim` subprocess that boots and reboots a simulator, so a small
@@ -128,9 +137,25 @@ final class AppModel: ObservableObject {
   }
 
   func refresh(includeCategories: Bool = false) async {
-    guard let backend, !isRefreshing else { return }
+    guard let backend else { return }
+    // A refresh already under way may have read the device list before the
+    // caller's work landed, so remember the request and re-run rather than
+    // dropping it — otherwise a concurrent operation's row stays stale.
+    guard !isRefreshing else {
+      refreshRequested = true
+      refreshRequestedWithCategories = refreshRequestedWithCategories || includeCategories
+      return
+    }
     isRefreshing = true
-    defer { isRefreshing = false }
+    defer {
+      isRefreshing = false
+      if refreshRequested {
+        refreshRequested = false
+        let withCategories = refreshRequestedWithCategories
+        refreshRequestedWithCategories = false
+        Task { await self.refresh(includeCategories: withCategories) }
+      }
+    }
 
     do {
       if includeCategories || categories.isEmpty || diskCleanupCategories.isEmpty {
@@ -558,10 +583,10 @@ final class AppModel: ObservableObject {
 
   private func slim(_ device: SimulatorDevice, presentErrors: Bool) async -> Bool {
     guard let backend else { return false }
+    // runConcurrently owns this reservation and clears it; a defer here
+    // could wipe a reservation another operation took in the meantime.
     setOperation("Applying service profile…", for: device.udid)
     record(.info, "Applying service profile to \(device.name)")
-    defer { clearOperation(for: device.udid) }
-
     do {
       let output = try await backend.slim(
         udid: device.udid,
@@ -581,10 +606,10 @@ final class AppModel: ObservableObject {
 
   private func restore(_ device: SimulatorDevice, presentErrors: Bool) async -> Bool {
     guard let backend else { return false }
+    // runConcurrently owns this reservation and clears it; a defer here
+    // could wipe a reservation another operation took in the meantime.
     setOperation("Restoring stock services…", for: device.udid)
     record(.info, "Restoring \(device.name) to stock")
-    defer { clearOperation(for: device.udid) }
-
     do {
       let output = try await backend.restore(
         udid: device.udid, preserveBootState: preserveBootState)
