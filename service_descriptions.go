@@ -121,7 +121,7 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.healtheventsd":        "Processes health events and related notifications.",
 	"com.apple.healthrecordsd":       "Synchronizes clinical health records.",
 	"com.apple.finhealthd":           "Analyzes Wallet transactions and financial-health data.",
-	"com.apple.homed":                "Manages HomeKit accessories, rooms, and automations.",
+	"com.apple.homed":                "Manages HomeKit accessories, rooms, and automations. Kept enabled on watchOS.",
 	"com.apple.homeeventsd":          "Processes HomeKit events and automation triggers.",
 	"com.apple.fitcore":              "Runs Apple Fitness content and background services.",
 	"com.apple.fitcore.session":      "Manages active Apple Fitness sessions.",

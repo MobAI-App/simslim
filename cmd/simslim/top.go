@@ -301,6 +301,9 @@ func (m *topModel) applySort() {
 		case sortState:
 			return simDisabled(a) < simDisabled(b)
 		case sortOS:
+			if a.PlatformName() != b.PlatformName() {
+				return a.PlatformName() < b.PlatformName()
+			}
 			return osLess(a.OSVersion, b.OSVersion)
 		default:
 			return simBytes(a) < simBytes(b)
@@ -364,7 +367,7 @@ func (m topModel) fleetView() string {
 
 	nw := m.nameWidth()
 	for i, s := range m.sims {
-		row := fmt.Sprintf("%-*s %-6s %-6s %5s %6s %8s %8s",
+		row := fmt.Sprintf("%-*s %-14s %-6s %5s %6s %8s %8s",
 			nw, truncate(fmt.Sprintf("%s · %s", s.Name, shortUDID(s.UDID)), nw),
 			osLabel(s), stateLabel(s), procCount(s), cpuLabel(s), ramLabel(s), diskLabel(m.disk, s.UDID))
 		if i == m.cursor {
@@ -389,14 +392,14 @@ func (m topModel) sortArrow(col sortCol) string {
 }
 
 func (m topModel) fleetHeader() string {
-	return fmt.Sprintf("%-*s %-6s %-6s %5s %6s %8s %8s",
+	return fmt.Sprintf("%-*s %-14s %-6s %5s %6s %8s %8s",
 		m.nameWidth(), "SIMULATOR"+m.sortArrow(sortName), "OS"+m.sortArrow(sortOS), "STATE"+m.sortArrow(sortState),
 		"PROC"+m.sortArrow(sortProc), "CPU"+m.sortArrow(sortCPU), "RAM"+m.sortArrow(sortRAM), "DISK"+m.sortArrow(sortDisk))
 }
 
 // fleetFixedCols is every non-name column plus the single spaces between all
-// seven columns: OS(6)+STATE(6)+PROC(5)+CPU(6)+RAM(8)+DISK(8) + 6 separators.
-const fleetFixedCols = 45
+// seven columns: OS(14)+STATE(6)+PROC(5)+CPU(6)+RAM(8)+DISK(8) + 6 separators.
+const fleetFixedCols = 53
 
 // nameWidth flexes the SIMULATOR column to fill the terminal: it grows when
 // there is room and shrinks (down to a floor) when there is not.
@@ -556,7 +559,7 @@ func osLabel(s simslim.TopSim) string {
 	if s.OSVersion == "" {
 		return "?"
 	}
-	return truncate(s.OSVersion, 6)
+	return truncate(s.RuntimeName(), 14)
 }
 
 func procCount(s simslim.TopSim) string {
@@ -624,9 +627,9 @@ func clampScroll(scroll, total, rows int) int {
 
 func staticFleet(out simslim.TopOutput) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-30s %-6s %-6s %5s %6s %8s\n", "SIMULATOR", "OS", "STATE", "PROC", "CPU", "RAM")
+	fmt.Fprintf(&b, "%-30s %-14s %-6s %5s %6s %8s\n", "SIMULATOR", "OS", "STATE", "PROC", "CPU", "RAM")
 	for _, s := range out.Sims {
-		fmt.Fprintf(&b, "%-30s %-6s %-6s %5s %6s %8s\n",
+		fmt.Fprintf(&b, "%-30s %-14s %-6s %5s %6s %8s\n",
 			truncate(fmt.Sprintf("%s · %s", s.Name, shortUDID(s.UDID)), 30),
 			osLabel(s), stateLabel(s), procCount(s), cpuLabel(s), ramLabel(s))
 	}

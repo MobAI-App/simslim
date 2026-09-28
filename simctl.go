@@ -23,10 +23,25 @@ var BootTimeout = 10 * time.Minute
 type Device struct {
 	UDID      string `json:"udid"`
 	Name      string `json:"name"`
-	State     string `json:"state"` // "Booted" or "Shutdown"
+	State     string `json:"state"`    // "Booted" or "Shutdown"
+	Platform  string `json:"platform"` // "iOS", "tvOS", or "watchOS"
 	OSVersion string `json:"osVersion"`
 	Set       string `json:"set"`
 	DataPath  string `json:"-"`
+}
+
+// PlatformName preserves the iOS default for callers constructing Device values
+// without platform metadata (as they did before multi-platform support).
+func (d Device) PlatformName() string {
+	if d.Platform == "" {
+		return "iOS"
+	}
+	return d.Platform
+}
+
+// RuntimeName is the platform and version shown in human-readable output.
+func (d Device) RuntimeName() string {
+	return d.PlatformName() + " " + d.OSVersion
 }
 
 type deviceSetInfo struct {
@@ -121,14 +136,15 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 	}
 	var devices []Device
 	for runtime, ds := range parsed.Devices {
-		if !strings.Contains(runtime, "iOS") {
+		platform, version := parseRuntime(runtime)
+		if platform == "" {
 			continue
 		}
 		for _, d := range ds {
 			if !d.IsAvailable {
 				continue
 			}
-			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, OSVersion: osVersion(runtime), Set: set.name, DataPath: d.DataPath})
+			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, Platform: platform, OSVersion: version, Set: set.name, DataPath: d.DataPath})
 		}
 	}
 	return devices, nil
@@ -176,13 +192,22 @@ func ListDevices(ctx context.Context) ([]Device, error) {
 	return devices, nil
 }
 
-// osVersion turns "com.apple.CoreSimulator.SimRuntime.iOS-26-5" into "26.5".
-func osVersion(runtime string) string {
-	i := strings.LastIndex(runtime, "iOS-")
-	if i < 0 {
-		return "?"
+// parseRuntime accepts only the simulator platforms supported by slimming.
+func parseRuntime(runtime string) (platform, version string) {
+	name, ok := strings.CutPrefix(runtime, "com.apple.CoreSimulator.SimRuntime.")
+	if !ok {
+		return "", "?"
 	}
-	return strings.ReplaceAll(runtime[i+len("iOS-"):], "-", ".")
+	platform, version, ok = strings.Cut(name, "-")
+	if !ok || version == "" {
+		return "", "?"
+	}
+	switch platform {
+	case "iOS", "tvOS", "watchOS":
+		return platform, strings.ReplaceAll(version, "-", ".")
+	default:
+		return "", "?"
+	}
 }
 
 // findDevice locates a simulator by UDID. An empty set searches every known set.

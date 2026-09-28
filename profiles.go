@@ -408,6 +408,26 @@ func (p Profile) Desired() map[string]bool {
 	return set
 }
 
+// DesiredForDevice applies platform-specific service requirements to a profile.
+// Desired remains the platform-independent catalog for profile editors.
+func (p Profile) DesiredForDevice(d Device) map[string]bool {
+	return desiredForDevice(d, p.Desired())
+}
+
+func desiredForDevice(d Device, desired map[string]bool) map[string]bool {
+	set := make(map[string]bool, len(desired))
+	for label, disabled := range desired {
+		// watchOS 26.5 re-enables homed after startup, even when launchd
+		// initially honours the override. Keep it enabled rather than report
+		// a full slim that drifts as soon as the Watch finishes starting up.
+		if d.PlatformName() == "watchOS" && label == "com.apple.homed" {
+			continue
+		}
+		set[label] = disabled
+	}
+	return set
+}
+
 // delta returns the launchctl transitions to move from current to desired,
 // scoped to managed labels. Labels outside managed are never touched: a
 // non-managed desired label is ignored, and a non-managed label that is already

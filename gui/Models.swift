@@ -12,6 +12,7 @@ struct SimulatorDevice: Decodable, Identifiable, Equatable {
   let name: String
   let state: String
   let osVersion: String
+  let platform: String?
   let managedDisabled: Int?
   let managedTotal: Int
   let statusError: String?
@@ -20,6 +21,14 @@ struct SimulatorDevice: Decodable, Identifiable, Equatable {
 
   var id: String { udid }
   var isBooted: Bool { state == "Booted" }
+  var runtimeName: String { "\(platform ?? "iOS") \(osVersion)" }
+  var deviceSymbol: String {
+    switch platform {
+    case "tvOS": return "appletv"
+    case "watchOS": return "applewatch"
+    default: return "iphone"
+    }
+  }
 }
 
 struct SlimCategory: Decodable, Identifiable, Equatable {

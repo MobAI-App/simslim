@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-simslim runs many more iOS simulators on one Mac by disabling the background
+simslim runs many more iOS, tvOS, and watchOS simulators on one Mac by disabling the background
 daemons a simulator doesn't need, cutting each simulator's memory ~4x. It is a Go
 CLI plus a SwiftUI macOS app that wraps it. Everything is driven through
 `xcrun simctl`; the tool only ever touches the simulators you point it at, never
@@ -67,12 +67,17 @@ testable capability needs. `doctor` reads a booted simulator's disabled labels
 and reports any required feature whose daemons are down, exiting non-zero — a CI
 preflight. `features_test.go` asserts every feature label is slimmable.
 `slim.go`'s `ensure()` rejects a non-empty slim profile on runtimes older than
-iOS 18.5 before booting or mutating the device, then reads the currently disabled
+iOS/tvOS 18.5 or watchOS 11.5 before booting or mutating the device, then reads the currently disabled
 labels, computes a `delta` against the desired set, and applies the changes with
 `launchctl disable/enable` run inside the simulator via `simctl spawn`, a pool of
 `spawnWorkers` (8) at a time. It reboots
 and reads the state back before reporting persistence. `on` disables the profile;
 `off` remains available on every runtime and re-enables the whole managed set.
+`Profile.DesiredForDevice` keeps `com.apple.homed` enabled on watchOS, which
+re-enables that service after startup. Slimming, verification, and per-device
+status totals use this platform-specific profile; `Profile.Desired` remains the
+platform-independent catalog for profile editors. `Device.Platform` identifies
+iOS, tvOS, or watchOS; an empty platform defaults to iOS for library callers.
 `EnableSlimNoReboot` (`on --no-reboot`) skips the reboot: it runs `launchctl
 disable` + `launchctl bootout` per label so the daemon stops in the current boot
 session, which is the only slimming possible on runtimes older than iOS 18.5.

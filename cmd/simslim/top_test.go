@@ -142,3 +142,21 @@ func TestStaticFleet(t *testing.T) {
 		}
 	}
 }
+
+func TestFleetShowsAndSortsPlatforms(t *testing.T) {
+	m := topModel{sortCol: sortOS, sims: []simslim.TopSim{
+		{Device: simslim.Device{Name: "Watch", Platform: "watchOS", OSVersion: "11.5"}},
+		{Device: simslim.Device{Name: "TV", Platform: "tvOS", OSVersion: "26.0"}},
+		{Device: simslim.Device{Name: "Phone", Platform: "iOS", OSVersion: "26.5"}},
+		{Device: simslim.Device{Name: "Old TV", Platform: "tvOS", OSVersion: "18.5"}},
+	}}
+	m.applySort()
+	for i, want := range []string{"iOS 26.5", "tvOS 18.5", "tvOS 26.0", "watchOS 11.5"} {
+		if got := osLabel(m.sims[i]); got != want {
+			t.Errorf("OS label at %d = %q, want %q", i, got, want)
+		}
+		if got := staticFleet(simslim.TopOutput{Sims: m.sims}); !strings.Contains(got, want) {
+			t.Errorf("static fleet missing %q: %s", want, got)
+		}
+	}
+}

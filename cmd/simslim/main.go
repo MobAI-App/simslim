@@ -36,7 +36,7 @@ func main() {
 	}
 
 	if runtime.GOOS != "darwin" {
-		fatal("simslim only works on macOS (it drives Apple's iOS simulators).")
+		fatal("simslim only works on macOS (it drives Apple's simulators).")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -66,12 +66,14 @@ func cmdList(ctx context.Context, cmd *cli.Command) error {
 		devices = booted
 	}
 	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].PlatformName() != devices[j].PlatformName() {
+			return devices[i].PlatformName() < devices[j].PlatformName()
+		}
 		if devices[i].OSVersion != devices[j].OSVersion {
 			return devices[i].OSVersion > devices[j].OSVersion
 		}
 		return devices[i].Name < devices[j].Name
 	})
-	managed := len(simslim.SlimmableSet())
 	memoryByUDID := map[string]simslim.Measurement{}
 	memoryErrors := map[string]string{}
 	if jsonOutput {
@@ -85,6 +87,7 @@ func cmdList(ctx context.Context, cmd *cli.Command) error {
 	}
 	summaries := make([]simslim.DeviceSummary, 0, len(devices))
 	for _, d := range devices {
+		managed := len((simslim.Profile{}).DesiredForDevice(d))
 		tag := "shutdown"
 		summary := simslim.DeviceSummary{Device: d, ManagedTotal: managed}
 		if d.State == "Booted" {
@@ -104,7 +107,7 @@ func cmdList(ctx context.Context, cmd *cli.Command) error {
 		}
 		summaries = append(summaries, summary)
 		if !jsonOutput {
-			line := fmt.Sprintf("%s  %-22s iOS %-6s %s", d.UDID, truncate(d.Name, 22), d.OSVersion, tag)
+			line := fmt.Sprintf("%s  %-22s %-14s %s", d.UDID, truncate(d.Name, 22), d.RuntimeName(), tag)
 			if d.Set != "" && d.Set != "default" {
 				line += "  (" + d.Set + ")"
 			}
@@ -287,7 +290,7 @@ func cmdVerify(ctx context.Context, cmd *cli.Command) error {
 			return err
 		}
 	} else if r.OK {
-		fmt.Printf("%s matches the profile: all %d expected daemons disabled.\n", udid, len(p.Desired()))
+		fmt.Printf("%s matches the profile: all expected disable overrides are applied.\n", udid)
 	} else {
 		fmt.Printf("%s does not match the profile (%d missing, %d extra):\n", udid, len(r.Missing), len(r.Extra))
 		for _, l := range r.Missing {
@@ -772,9 +775,9 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	originallyShutdown := preserveBootState && startedShutdown
 
 	if startedShutdown {
-		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services while it is off, then booting it slim.\n", udid, len(p.Desired()))
+		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services while it is off, then booting it slim.\n", udid, len(p.DesiredForDevice(device)))
 	} else {
-		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.Desired()))
+		fmt.Fprintf(os.Stderr, "Slimming %s: disabling %d background services. The simulator will reboot to apply the changes.\n", udid, len(p.DesiredForDevice(device)))
 	}
 	changed, operationErr := simslim.EnableSlim(tctx, device.Set, udid, p, report)
 	if originallyShutdown {
@@ -812,7 +815,7 @@ func cmdOn(ctx context.Context, cmd *cli.Command) error {
 // The closing line says what the next boot brings, since on iOS < 18.5 the
 // state is gone after a reboot and someone will otherwise report that as a bug.
 func onNoReboot(ctx context.Context, device simslim.Device, p simslim.Profile, report simslim.Reporter) error {
-	fmt.Fprintf(os.Stderr, "Slimming %s for this boot session: stopping %d background services without a reboot.\n", device.UDID, len(p.Desired()))
+	fmt.Fprintf(os.Stderr, "Slimming %s for this boot session: stopping %d background services without a reboot.\n", device.UDID, len(p.DesiredForDevice(device)))
 	changed, err := simslim.EnableSlimNoReboot(ctx, device.Set, device.UDID, p, report)
 	if err != nil {
 		return err
@@ -822,10 +825,10 @@ func onNoReboot(ctx context.Context, device simslim.Device, p simslim.Profile, r
 	} else {
 		fmt.Println("Already slim. Confirmed every profiled daemon is stopped for this boot session.")
 	}
-	if simslim.PersistentOverridesSupported(device.OSVersion) {
+	if device.SupportsPersistentOverrides() {
 		fmt.Println("The disable overrides are also stored, so the next boot should come up slim; `simslim verify` after a reboot confirms it.")
 	} else {
-		fmt.Printf("iOS %s cannot persist overrides: the simulator returns to stock at its next boot, so re-run this command after every boot.\n", device.OSVersion)
+		fmt.Printf("%s cannot persist overrides: the simulator returns to stock at its next boot, so re-run this command after every boot.\n", device.RuntimeName())
 	}
 	return nil
 }
@@ -946,7 +949,7 @@ func fatal(msg string) {
 }
 
 func usage() {
-	fmt.Print(`simslim runs more iOS simulators on the same Mac by disabling the
+	fmt.Print(`simslim runs more iOS, tvOS, and watchOS simulators on the same Mac by disabling the
 background daemons a simulator does not need.
 
 USAGE

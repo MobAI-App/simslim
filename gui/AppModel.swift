@@ -90,6 +90,14 @@ final class AppModel: ObservableObject {
     return allLabels.subtracting(effectiveKeptLabels).count
   }
 
+  func disabledDaemonCount(for device: SimulatorDevice) -> Int {
+    let allLabels = categories.reduce(into: Set<String>()) { $0.formUnion($1.labels) }
+    var disabled = allLabels.subtracting(effectiveKeptLabels)
+    // Keep in sync with Profile.DesiredForDevice: watchOS re-enables homed.
+    if device.platform == "watchOS" { disabled.remove("com.apple.homed") }
+    return disabled.count
+  }
+
   var bootedCount: Int { devices.filter(\.isBooted).count }
   var selectionCount: Int { selectedUDIDs.count }
 
@@ -594,7 +602,7 @@ final class AppModel: ObservableObject {
         keepLabels: keptServiceLabels,
         preserveBootState: preserveBootState
       )
-      setCachedDisabled(disabledDaemonCount, for: device.udid)
+      setCachedDisabled(disabledDaemonCount(for: device), for: device.udid)
       record(.success, "Updated \(device.name): \(summaryLine(output))")
       return true
     } catch {
