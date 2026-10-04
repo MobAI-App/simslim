@@ -41,6 +41,8 @@ go install github.com/mobai-app/simslim/cmd/simslim@latest
 macOS only, and you need Xcode with an iOS Simulator runtime, since simslim
 drives simulators through `xcrun simctl`.
 
+Use it in CI with [mobai-ci](https://github.com/MobAI-App/mobai-ci).
+
 ## macOS app
 
 The SwiftUI app bundles the CLI and adds:
