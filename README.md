@@ -247,6 +247,12 @@ each daemon and then boots it out of launchd, so the process stops now and
 cannot respawn, with no shutdown/boot cycle. It takes the same
 `--profile`/`--except`/`--keep` selection as `on`.
 
+Most daemons are stopped together: one `launchctl unload -w` with the job plists
+from the runtime writes the same disable override and removes the running job,
+so a busy host does not pay for two `launchctl` spawns per daemon. The result is
+read back, and any daemon still enabled or loaded is then disabled and booted out
+on its own.
+
 ```sh
 simslim on <udid> --no-reboot --profile ci.json
 ```

@@ -231,10 +231,10 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 	if len(extra) > 0 {
 		report.report(fmt.Sprintf("Leaving %d services disabled beyond this profile; only `simslim off` re-enables them.", len(extra)))
 	}
-	// Boot out every profiled label, not just those without an override: an
+	// Check every profiled label, not just those without an override: an
 	// override says nothing about whether the job is still loaded (an earlier
-	// run may have disabled it and then failed to boot it out). A bootout of
-	// an already-missing job is a cheap no-op, so this keeps the command idempotent.
+	// run may have disabled it and then failed to boot it out). Labels that are
+	// both disabled and unloaded are skipped, so the command stays idempotent.
 	changed = len(toDisable) > 0
 	labels := make([]string, 0, len(desired))
 	for l := range desired {
@@ -244,7 +244,8 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 	}
 	sort.Strings(labels)
 	report.report(fmt.Sprintf("Stopping %d background services for this boot session...", len(labels)))
-	if err := applyDelta(ctx, set, udid, labels, nil, liveDisable, report); err != nil {
+	remaining := unloadInBatch(ctx, set, udid, labels, readPlistLabel, report)
+	if err := applyDelta(ctx, set, udid, remaining, nil, liveDisable, report); err != nil {
 		return changed, err
 	}
 	after, err := readDisabled(ctx, set, udid)
@@ -255,6 +256,62 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 		return changed, fmt.Errorf("%d of %d disable overrides did not take", len(missing), len(labels))
 	}
 	return changed, nil
+}
+
+// unloadInBatch disables and unloads the labels whose job plist it can find with
+// one `launchctl unload -w` per chunk, then reads the state back and returns
+// what still needs the per-label disable and bootout. Two spawns per label add
+// up on a busy host; one spawn per chunk does not. Anything that goes wrong
+// here only means more labels take the per-label path.
+func unloadInBatch(ctx context.Context, set, udid string, labels []string, plistLabel func(context.Context, string) (string, error), report Reporter) []string {
+	d, err := FindDevice(ctx, udid, set)
+	if err != nil || d.RuntimeID == "" {
+		return labels
+	}
+	root, err := runtimeRoot(ctx, d.RuntimeID)
+	if err != nil {
+		return labels
+	}
+	// Only what is still enabled or loaded needs stopping, so a device that is
+	// already slim spawns no unload and does not report work it did not do.
+	pending, err := stopState(ctx, set, udid, labels)
+	if err != nil {
+		return labels
+	}
+	if len(pending) == 0 {
+		report.report(fmt.Sprintf("  all %d services were already stopped", len(labels)))
+		return nil
+	}
+	plists := launchdJobPlists(ctx, root, pending, plistLabel)
+	if len(plists) == 0 {
+		return pending
+	}
+	paths := make([]string, 0, len(plists))
+	for _, l := range pending {
+		if p, ok := plists[l]; ok {
+			paths = append(paths, p)
+		}
+	}
+	unloadJobs(ctx, set, udid, paths)
+	rest, err := stopState(ctx, set, udid, pending)
+	if err != nil {
+		return pending
+	}
+	report.report(fmt.Sprintf("  %d/%d services stopped in one batch", len(pending)-len(rest), len(pending)))
+	return rest
+}
+
+// stopState returns the labels that are still enabled or still loaded.
+func stopState(ctx context.Context, set, udid string, labels []string) ([]string, error) {
+	disabled, err := readDisabled(ctx, set, udid)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := loadedLabels(ctx, set, udid)
+	if err != nil {
+		return nil, err
+	}
+	return stillToStop(labels, disabled, loaded), nil
 }
 
 // disableSlim re-enables every managed daemon, returning the device to stock.
