@@ -171,22 +171,28 @@ func PersistentOverridesSupported(version string) bool {
 }
 
 func (d Device) minimumPersistentVersion() string {
-	if d.PlatformName() == "watchOS" {
+	switch d.PlatformName() {
+	case "watchOS":
 		return "11.5"
+	case "visionOS":
+		return "2.5"
 	}
 	return "18.5"
 }
 
 // SupportsPersistentOverrides applies the launchd persistence version gate to
-// the device's platform. tvOS 18.5 and watchOS 11.5 are the release generation
-// corresponding to iOS 18.5. This gate is not proof of persistence: ensure
-// always reads overrides back after boot and fails if the runtime lost them.
+// the device's platform. tvOS 18.5, watchOS 11.5, and visionOS 2.5 are the
+// release generation corresponding to iOS 18.5. This gate is not proof of
+// persistence: ensure always reads overrides back after boot and fails if the
+// runtime lost them.
 func (d Device) SupportsPersistentOverrides() bool {
 	minimumMajor := 18
 	switch d.PlatformName() {
 	case "iOS", "tvOS":
 	case "watchOS":
 		minimumMajor = 11
+	case "visionOS":
+		minimumMajor = 2
 	default:
 		return false
 	}

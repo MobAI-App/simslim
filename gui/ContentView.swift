@@ -321,7 +321,7 @@ struct ContentView: View {
               systemImage: "rectangle.slash",
               description: Text(
                 searchText.isEmpty
-                  ? "Install an iOS, tvOS, or watchOS Simulator runtime in Xcode."
+                  ? "Install an iOS, tvOS, watchOS, or visionOS Simulator runtime in Xcode."
                   : "Try a different name, UDID, or OS version.")
             )
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -791,7 +791,7 @@ private struct ProfileSidebar: View {
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.green)
         Text(
-          "Core workflow and deadlock-prone daemons are never disabled. HomeKit’s homed service stays enabled on watchOS."
+          "Core workflow and deadlock-prone daemons are never disabled. HomeKit’s homed stays enabled on watchOS, and the asset service mobileassetd on visionOS."
         )
         .font(.caption)
         .foregroundStyle(.secondary)

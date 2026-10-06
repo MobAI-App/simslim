@@ -26,6 +26,7 @@ struct SimulatorDevice: Decodable, Identifiable, Equatable {
     switch platform {
     case "tvOS": return "appletv"
     case "watchOS": return "applewatch"
+    case "visionOS": return "visionpro"
     default: return "iphone"
     }
   }

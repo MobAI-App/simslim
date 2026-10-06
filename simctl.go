@@ -24,7 +24,7 @@ type Device struct {
 	UDID      string `json:"udid"`
 	Name      string `json:"name"`
 	State     string `json:"state"`    // "Booted" or "Shutdown"
-	Platform  string `json:"platform"` // "iOS", "tvOS", or "watchOS"
+	Platform  string `json:"platform"` // "iOS", "tvOS", "watchOS", or "visionOS"
 	OSVersion string `json:"osVersion"`
 	Set       string `json:"set"`
 	DataPath  string `json:"-"`
@@ -218,6 +218,9 @@ func parseRuntime(runtime string) (platform, version string) {
 	switch platform {
 	case "iOS", "tvOS", "watchOS":
 		return platform, strings.ReplaceAll(version, "-", ".")
+	case "xrOS":
+		// CoreSimulator still names the visionOS runtime xrOS.
+		return "visionOS", strings.ReplaceAll(version, "-", ".")
 	default:
 		return "", "?"
 	}

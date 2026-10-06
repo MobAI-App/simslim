@@ -202,7 +202,7 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.storagedatad":                      "Calculates storage usage shown by the system.",
 	"com.apple.StatusKitAgent":                    "Shares Focus, presence, and status between devices.",
 	"com.apple.countryd":                          "Determines regional availability for system features.",
-	"com.apple.mobileassetd":                      "Downloads and manages system asset packages.",
+	"com.apple.mobileassetd":                      "Downloads and manages system asset packages. Kept enabled on visionOS.",
 	"com.apple.managedconfiguration.passcodenagd": "Enforces managed passcode requirements.",
 }
 

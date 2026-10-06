@@ -303,3 +303,26 @@ func TestNoRebootOnASlimDeviceStopsNothing(t *testing.T) {
 	}
 	f.assertStopped(t, labels)
 }
+
+// The batch only unloads the device's own desired labels, so visionOS keeps
+// mobileassetd (and with it the surroundings) running.
+func TestNoRebootBatchKeepsVisionMobileAssetsRunning(t *testing.T) {
+	const label = "com.apple.mobileassetd"
+	f := newBatchFake(t, "xrOS-27-0", sortedLabels(Profile{}.Desired()), "")
+
+	if _, err := EnableSlimNoReboot(context.Background(), "default", f.udid, Profile{}, nil); err != nil {
+		t.Fatalf("EnableSlimNoReboot: %v", err)
+	}
+	unloads, perLabel := f.calls(t)
+	for _, call := range append(unloads, perLabel...) {
+		if strings.Contains(call, label) {
+			t.Errorf("visionOS slim passed %s to launchctl", label)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.loaded, label)); err != nil {
+		t.Errorf("%s is no longer loaded on visionOS", label)
+	}
+	if _, err := os.Stat(filepath.Join(f.dis, label)); err == nil {
+		t.Errorf("%s got a disable override on visionOS", label)
+	}
+}
