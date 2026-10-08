@@ -1,6 +1,6 @@
 # simslim
 
-Run a lot more iOS simulators on one Mac by turning off the background daemons a simulator doesn't need.
+Run a lot more iOS, Apple TV (tvOS), Apple Watch (watchOS), and Apple Vision Pro (visionOS) simulators on one Mac by turning off the background daemons a simulator doesn't need.
 
 A freshly booted iOS simulator starts around 180 background services: Siri, Spotlight indexing, photo analysis, News, wallpaper posters, iCloud sync, and so on. None of it matters when you're using the simulator for development, testing, or CI. simslim switches those services off, which cuts each simulator's memory roughly 4x. On the same laptop you go from a handful of simulators to a screenful.
 
@@ -38,8 +38,30 @@ or
 go install github.com/mobai-app/simslim/cmd/simslim@latest
 ```
 
-macOS only, and you need Xcode with an iOS Simulator runtime, since simslim
-drives simulators through `xcrun simctl`.
+macOS only, and you need Xcode with an iOS, tvOS, watchOS, or visionOS Simulator
+runtime, since simslim drives simulators through `xcrun simctl`.
+
+All four platforms use the same commands and service profiles. `list`, `top`,
+and the macOS app show each device's platform; JSON device records include
+`platform` (`iOS`, `tvOS`, `watchOS`, or `visionOS`) alongside the numeric
+`osVersion`. The existing memory figures and category estimates were measured on
+iOS; savings on Apple TV, Apple Watch, and Apple Vision Pro depend on their
+runtime and workload.
+The profile is an allowlist of disable overrides, so labels absent from a
+particular runtime do not represent running processes or additional savings.
+watchOS keeps `com.apple.homed` enabled because it re-enables the service after
+startup; profile verification and managed totals account for this exception.
+visionOS keeps `com.apple.mobileassetd` enabled: the simulated surroundings
+are mobile assets, and without it the simulator boots into a black space
+around the Home View, although apps still launch. A visionOS simulator stays
+expensive even when slim, because rendering its surroundings keeps
+`backboardd` busy.
+For Watch connectivity tests, keep `connectivity,messaging`; for HealthKit or
+fitness tests, also keep `health`, for example:
+
+```sh
+simslim on <watch-udid> --except connectivity,messaging,health
+```
 
 Use it in CI with [mobai-ci](https://github.com/MobAI-App/mobai-ci).
 
@@ -233,13 +255,20 @@ each daemon and then boots it out of launchd, so the process stops now and
 cannot respawn, with no shutdown/boot cycle. It takes the same
 `--profile`/`--except`/`--keep` selection as `on`.
 
+Most daemons are stopped together: one `launchctl unload -w` with the job plists
+from the runtime writes the same disable override and removes the running job,
+so a busy host does not pay for two `launchctl` spawns per daemon. The result is
+read back, and any daemon still enabled or loaded is then disabled and booted out
+on its own.
+
 ```sh
 simslim on <udid> --no-reboot --profile ci.json
 ```
 
-On iOS 18.5 and newer this is simply the faster path; the disable overrides are
-stored as well, so the next boot comes up slim too. On iOS 17.x and 18.3, which
-cannot persist overrides, it is the only way to slim at all, and the state is
+On runtimes with persistent overrides this is simply the faster path; the
+disable overrides are stored as well, so the next boot comes up slim too.
+On older runtimes that cannot persist overrides, including iOS 17.x and 18.3,
+it is the only way to slim at all, and the state is
 gone at the next reboot: re-run it after every boot. `status` says so when it
 reads such a simulator, and `status --json` carries a `persistent` field.
 
@@ -257,7 +286,7 @@ device sets and slims each simulator no-reboot the moment it boots, then leaves
 it alone until it boots again. A clone slimmed a few seconds into a multi-minute
 run keeps its freed memory for the rest of the run. A failed slim is retried on
 the next scan, and a device that shut down and booted again is slimmed again,
-because below iOS 18.5 a no-reboot slim ends with the boot session.
+because on older runtimes a no-reboot slim ends with the boot session.
 
 ```sh
 simslim watch --except web,store &
@@ -349,11 +378,14 @@ Applying a profile normally costs no `launchctl` call at all: the overrides are 
 
 The earliest runtime with verified persistence is iOS 18.5. iOS 17.x and 18.3
 accept each `launchctl disable`, but the simulator comes back stock after a
-reboot. `simslim on` rejects runtimes older than 18.5 before booting or changing
-launchd state and points at `--no-reboot`, which slims the current boot session
-only (see [Slimming without a reboot](#slimming-without-a-reboot)). Supported
-runtimes are still read back after the reboot, and the command fails instead of
-claiming success if any requested override was lost.
+reboot. The persistent-slimming version gate is iOS/tvOS 18.5, watchOS 11.5, or
+visionOS 2.5 and newer. The tvOS, watchOS, and visionOS cutoffs follow the
+corresponding iOS release generation; they are not independent measurements of
+the earliest persistent runtime. `simslim on` rejects older versions before booting or changing launchd
+state and points at `--no-reboot`, which slims the current boot session only
+(see [Slimming without a reboot](#slimming-without-a-reboot)). Every platform is
+read back after boot, and the command fails instead of claiming success if any
+requested override was lost. `off` remains available on older runtimes.
 
 This is per-simulator state, not a global setting. The daemon disables live in
 that one simulator's launchd database and nowhere else. `simslim clone` copies

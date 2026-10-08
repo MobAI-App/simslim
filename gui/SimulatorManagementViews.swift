@@ -167,7 +167,7 @@ struct SimulatorNameSheet: View {
       }
 
       HStack(spacing: 6) {
-        Text("iOS \(device.osVersion)")
+        Text(device.runtimeName)
         Text("·")
         Text(device.udid)
           .fontDesign(.monospaced)
@@ -264,7 +264,7 @@ struct SimulatorDestructiveSheet: View {
         VStack(spacing: 0) {
           ForEach(devices) { device in
             HStack(spacing: 10) {
-              Image(systemName: "iphone")
+              Image(systemName: device.deviceSymbol)
                 .foregroundStyle(device.isBooted ? Color.blue : Color.secondary)
                 .frame(width: 26, height: 26)
                 .background(
@@ -286,7 +286,7 @@ struct SimulatorDestructiveSheet: View {
               Text(device.isBooted ? "Booted" : "Shutdown")
                 .font(.caption)
                 .foregroundStyle(device.isBooted ? Color.blue : Color.secondary)
-              Text("iOS \(device.osVersion)")
+              Text(device.runtimeName)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }

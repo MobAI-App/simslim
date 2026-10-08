@@ -121,7 +121,7 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.healtheventsd":        "Processes health events and related notifications.",
 	"com.apple.healthrecordsd":       "Synchronizes clinical health records.",
 	"com.apple.finhealthd":           "Analyzes Wallet transactions and financial-health data.",
-	"com.apple.homed":                "Manages HomeKit accessories, rooms, and automations.",
+	"com.apple.homed":                "Manages HomeKit accessories, rooms, and automations. Kept enabled on watchOS.",
 	"com.apple.homeeventsd":          "Processes HomeKit events and automation triggers.",
 	"com.apple.fitcore":              "Runs Apple Fitness content and background services.",
 	"com.apple.fitcore.session":      "Manages active Apple Fitness sessions.",
@@ -202,7 +202,7 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.storagedatad":                      "Calculates storage usage shown by the system.",
 	"com.apple.StatusKitAgent":                    "Shares Focus, presence, and status between devices.",
 	"com.apple.countryd":                          "Determines regional availability for system features.",
-	"com.apple.mobileassetd":                      "Downloads and manages system asset packages.",
+	"com.apple.mobileassetd":                      "Downloads and manages system asset packages. Kept enabled on visionOS.",
 	"com.apple.managedconfiguration.passcodenagd": "Enforces managed passcode requirements.",
 }
 

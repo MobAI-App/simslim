@@ -23,10 +23,26 @@ var BootTimeout = 10 * time.Minute
 type Device struct {
 	UDID      string `json:"udid"`
 	Name      string `json:"name"`
-	State     string `json:"state"` // "Booted" or "Shutdown"
+	State     string `json:"state"`    // "Booted" or "Shutdown"
+	Platform  string `json:"platform"` // "iOS", "tvOS", "watchOS", or "visionOS"
 	OSVersion string `json:"osVersion"`
 	Set       string `json:"set"`
 	DataPath  string `json:"-"`
+	RuntimeID string `json:"-"` // e.g. com.apple.CoreSimulator.SimRuntime.iOS-26-5; leads to the RuntimeRoot's job plists
+}
+
+// PlatformName preserves the iOS default for callers constructing Device values
+// without platform metadata (as they did before multi-platform support).
+func (d Device) PlatformName() string {
+	if d.Platform == "" {
+		return "iOS"
+	}
+	return d.Platform
+}
+
+// RuntimeName is the platform and version shown in human-readable output.
+func (d Device) RuntimeName() string {
+	return d.PlatformName() + " " + d.OSVersion
 }
 
 type deviceSetInfo struct {
@@ -121,14 +137,15 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 	}
 	var devices []Device
 	for runtime, ds := range parsed.Devices {
-		if !strings.Contains(runtime, "iOS") {
+		platform, version := parseRuntime(runtime)
+		if platform == "" {
 			continue
 		}
 		for _, d := range ds {
 			if !d.IsAvailable {
 				continue
 			}
-			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, OSVersion: osVersion(runtime), Set: set.name, DataPath: d.DataPath})
+			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, Platform: platform, OSVersion: version, Set: set.name, DataPath: d.DataPath, RuntimeID: runtime})
 		}
 	}
 	return devices, nil
@@ -176,13 +193,25 @@ func ListDevices(ctx context.Context) ([]Device, error) {
 	return devices, nil
 }
 
-// osVersion turns "com.apple.CoreSimulator.SimRuntime.iOS-26-5" into "26.5".
-func osVersion(runtime string) string {
-	i := strings.LastIndex(runtime, "iOS-")
-	if i < 0 {
-		return "?"
+// parseRuntime accepts only the simulator platforms supported by slimming.
+func parseRuntime(runtime string) (platform, version string) {
+	name, ok := strings.CutPrefix(runtime, "com.apple.CoreSimulator.SimRuntime.")
+	if !ok {
+		return "", "?"
 	}
-	return strings.ReplaceAll(runtime[i+len("iOS-"):], "-", ".")
+	platform, version, ok = strings.Cut(name, "-")
+	if !ok || version == "" {
+		return "", "?"
+	}
+	switch platform {
+	case "iOS", "tvOS", "watchOS":
+		return platform, strings.ReplaceAll(version, "-", ".")
+	case "xrOS":
+		// CoreSimulator still names the visionOS runtime xrOS.
+		return "visionOS", strings.ReplaceAll(version, "-", ".")
+	default:
+		return "", "?"
+	}
 }
 
 // findDevice locates a simulator by UDID. An empty set searches every known set.
@@ -506,4 +535,44 @@ func WaitShutdown(ctx context.Context, set, udid string, timeout time.Duration) 
 		time.Sleep(500 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out waiting for %s to shut down", udid)
+}
+
+// runtimeRoot returns the host path of a CoreSimulator runtime's RuntimeRoot.
+// Simulator processes see the host file system, so launchctl inside the
+// simulator can read job plists by these paths.
+func runtimeRoot(ctx context.Context, runtimeID string) (string, error) {
+	out, err := exec.CommandContext(ctx, "xcrun", "simctl", "list", "runtimes", "-j").Output()
+	if err != nil {
+		return "", listError(err)
+	}
+	return parseRuntimeRoot(out, runtimeID)
+}
+
+// unloadJobs disables and unloads many jobs with one `launchctl unload -w`
+// spawn per chunk of unloadChunk plists, instead of a disable and a bootout
+// spawn per label. The exit status is not trusted: launchctl reports any single
+// failure for the whole call, so the caller reads the state back and retries
+// what is missing label by label. A chunk that runs out of time ends the
+// batch, so a slow host keeps the rest of its budget for that per-label path.
+func unloadJobs(ctx context.Context, set, udid string, paths []string) {
+	for start := 0; start < len(paths); start += unloadChunk {
+		end := min(start+unloadChunk, len(paths))
+		args := simctlArgs(set, append([]string{"spawn", udid, "launchctl", "unload", "-w"}, paths[start:end]...)...)
+		spawnCtx, cancel := context.WithTimeout(ctx, SpawnTimeout)
+		_ = exec.CommandContext(spawnCtx, "xcrun", args...).Run()
+		expired := spawnCtx.Err() != nil
+		cancel()
+		if expired {
+			return
+		}
+	}
+}
+
+// loadedLabels returns every label currently loaded in the simulator's launchd.
+func loadedLabels(ctx context.Context, set, udid string) (map[string]bool, error) {
+	out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "spawn", udid, "launchctl", "list")...).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("launchctl list: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return parseLaunchctlList(string(out)), nil
 }

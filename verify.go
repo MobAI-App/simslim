@@ -32,7 +32,7 @@ func VerifyProfile(ctx context.Context, udid string, p Profile) (VerifyResult, e
 	if err != nil {
 		return VerifyResult{}, err
 	}
-	r := compareDisabled(disabled, p.Desired(), managedSet())
+	r := compareDisabled(disabled, p.DesiredForDevice(d), managedSet())
 	r.UDID = udid
 	return r, nil
 }

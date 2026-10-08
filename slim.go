@@ -32,9 +32,10 @@ func ensure(ctx context.Context, set, udid string, desired map[string]bool, repo
 	if err != nil {
 		return false, err
 	}
-	persistent := PersistentOverridesSupported(d.OSVersion)
+	desired = desiredForDevice(d, desired)
+	persistent := d.SupportsPersistentOverrides()
 	if len(desired) > 0 && !persistent {
-		return false, fmt.Errorf("iOS %s runtime cannot persist launchd disable overrides across reboot; simslim requires iOS 18.5 or newer, or `simslim on --no-reboot` to slim the current boot session only", d.OSVersion)
+		return false, fmt.Errorf("%s runtime cannot persist launchd disable overrides across reboot; simslim requires %s %s or newer, or `simslim on --no-reboot` to slim the current boot session only", d.RuntimeName(), d.PlatformName(), d.minimumPersistentVersion())
 	}
 	// A shutdown device can be reconfigured by writing the overrides launchd_sim
 	// reads when it starts, which skips both the per-label launchctl spawns and
@@ -166,13 +167,43 @@ func countLost(after, desired, managed map[string]bool) int {
 // disable overrides across reboot. iOS 17.x and 18.3 hold them in memory only
 // and come back stock; iOS 18.5 and newer are verified to persist them.
 func PersistentOverridesSupported(version string) bool {
+	return (Device{OSVersion: version}).SupportsPersistentOverrides()
+}
+
+func (d Device) minimumPersistentVersion() string {
+	switch d.PlatformName() {
+	case "watchOS":
+		return "11.5"
+	case "visionOS":
+		return "2.5"
+	}
+	return "18.5"
+}
+
+// SupportsPersistentOverrides applies the launchd persistence version gate to
+// the device's platform. tvOS 18.5, watchOS 11.5, and visionOS 2.5 are the
+// release generation corresponding to iOS 18.5. This gate is not proof of
+// persistence: ensure always reads overrides back after boot and fails if the
+// runtime lost them.
+func (d Device) SupportsPersistentOverrides() bool {
+	minimumMajor := 18
+	switch d.PlatformName() {
+	case "iOS", "tvOS":
+	case "watchOS":
+		minimumMajor = 11
+	case "visionOS":
+		minimumMajor = 2
+	default:
+		return false
+	}
+	version := d.OSVersion
 	parts := strings.SplitN(version, ".", 3)
 	if len(parts) < 2 {
 		return false
 	}
 	major, majorErr := strconv.Atoi(parts[0])
 	minor, minorErr := strconv.Atoi(parts[1])
-	return majorErr == nil && minorErr == nil && (major > 18 || major == 18 && minor >= 5)
+	return majorErr == nil && minorErr == nil && minor >= 0 && (major > minimumMajor || major == minimumMajor && minor >= 5)
 }
 
 // enableSlim disables the profile's daemons and boots the device slim.
@@ -188,7 +219,11 @@ func EnableSlim(ctx context.Context, set, udid string, p Profile, report Reporte
 // disabled beyond the profile are left alone, because a live re-enable would
 // have to bootstrap each daemon again; `off` restores them with a reboot.
 func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report Reporter) (changed bool, err error) {
-	desired := p.Desired()
+	d, err := FindDevice(ctx, udid, set)
+	if err != nil {
+		return false, err
+	}
+	desired := p.DesiredForDevice(d)
 	report.report("Booting the simulator (a first boot can take up to a minute)...")
 	if err := BootAndWait(ctx, set, udid); err != nil {
 		return false, err
@@ -202,10 +237,10 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 	if len(extra) > 0 {
 		report.report(fmt.Sprintf("Leaving %d services disabled beyond this profile; only `simslim off` re-enables them.", len(extra)))
 	}
-	// Boot out every profiled label, not just those without an override: an
+	// Check every profiled label, not just those without an override: an
 	// override says nothing about whether the job is still loaded (an earlier
-	// run may have disabled it and then failed to boot it out). A bootout of
-	// an already-missing job is a cheap no-op, so this keeps the command idempotent.
+	// run may have disabled it and then failed to boot it out). Labels that are
+	// both disabled and unloaded are skipped, so the command stays idempotent.
 	changed = len(toDisable) > 0
 	labels := make([]string, 0, len(desired))
 	for l := range desired {
@@ -215,7 +250,8 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 	}
 	sort.Strings(labels)
 	report.report(fmt.Sprintf("Stopping %d background services for this boot session...", len(labels)))
-	if err := applyDelta(ctx, set, udid, labels, nil, liveDisable, report); err != nil {
+	remaining := unloadInBatch(ctx, set, udid, d.RuntimeID, labels, readPlistLabel, report)
+	if err := applyDelta(ctx, set, udid, remaining, nil, liveDisable, report); err != nil {
 		return changed, err
 	}
 	after, err := readDisabled(ctx, set, udid)
@@ -226,6 +262,61 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 		return changed, fmt.Errorf("%d of %d disable overrides did not take", len(missing), len(labels))
 	}
 	return changed, nil
+}
+
+// unloadInBatch disables and unloads the labels whose job plist it can find with
+// one `launchctl unload -w` per chunk, then reads the state back and returns
+// what still needs the per-label disable and bootout. Two spawns per label add
+// up on a busy host; one spawn per chunk does not. Anything that goes wrong
+// here only means more labels take the per-label path.
+func unloadInBatch(ctx context.Context, set, udid, runtimeID string, labels []string, plistLabel func(context.Context, string) (string, error), report Reporter) []string {
+	if runtimeID == "" {
+		return labels
+	}
+	root, err := runtimeRoot(ctx, runtimeID)
+	if err != nil {
+		return labels
+	}
+	// Only what is still enabled or loaded needs stopping, so a device that is
+	// already slim spawns no unload and does not report work it did not do.
+	pending, err := stopState(ctx, set, udid, labels)
+	if err != nil {
+		return labels
+	}
+	if len(pending) == 0 {
+		report.report(fmt.Sprintf("  all %d services were already stopped", len(labels)))
+		return nil
+	}
+	plists := launchdJobPlists(ctx, root, pending, plistLabel)
+	if len(plists) == 0 {
+		return pending
+	}
+	paths := make([]string, 0, len(plists))
+	for _, l := range pending {
+		if p, ok := plists[l]; ok {
+			paths = append(paths, p)
+		}
+	}
+	unloadJobs(ctx, set, udid, paths)
+	rest, err := stopState(ctx, set, udid, pending)
+	if err != nil {
+		return pending
+	}
+	report.report(fmt.Sprintf("  %d/%d services stopped in one batch", len(pending)-len(rest), len(pending)))
+	return rest
+}
+
+// stopState returns the labels that are still enabled or still loaded.
+func stopState(ctx context.Context, set, udid string, labels []string) ([]string, error) {
+	disabled, err := readDisabled(ctx, set, udid)
+	if err != nil {
+		return nil, err
+	}
+	loaded, err := loadedLabels(ctx, set, udid)
+	if err != nil {
+		return nil, err
+	}
+	return stillToStop(labels, disabled, loaded), nil
 }
 
 // disableSlim re-enables every managed daemon, returning the device to stock.
@@ -252,8 +343,8 @@ func ReadStatus(ctx context.Context, udid string) (Status, map[string]bool, erro
 }
 
 func ReadStatusForDevice(ctx context.Context, d Device) (Status, map[string]bool, error) {
-	managed := SlimmableSet()
-	st := Status{ManagedTotal: len(managed), Booted: d.State == "Booted", Persistent: PersistentOverridesSupported(d.OSVersion)}
+	managed := (Profile{}).DesiredForDevice(d)
+	st := Status{ManagedTotal: len(managed), Booted: d.State == "Booted", Persistent: d.SupportsPersistentOverrides()}
 	if !st.Booted {
 		return st, nil, fmt.Errorf("simulator must be booted to read its state (it is %s)", d.State)
 	}
