@@ -28,7 +28,7 @@ type Device struct {
 	OSVersion string `json:"osVersion"`
 	Set       string `json:"set"`
 	DataPath  string `json:"-"`
-	RuntimeID string `json:"-"` // e.g. com.apple.CoreSimulator.SimRuntime.iOS-26-5
+	RuntimeID string `json:"-"` // e.g. com.apple.CoreSimulator.SimRuntime.iOS-26-5; leads to the RuntimeRoot's job plists
 }
 
 // PlatformName preserves the iOS default for callers constructing Device values
@@ -145,20 +145,8 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 			if !d.IsAvailable {
 				continue
 			}
-			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, Platform: platform, OSVersion: version, Set: set.name, DataPath: d.DataPath})
+			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, Platform: platform, OSVersion: version, Set: set.name, DataPath: d.DataPath, RuntimeID: runtime})
 		}
-	}
-
-	// The runtime identifier leads to the runtime's RuntimeRoot, where the
-	// launchd job plists live (see unloadInBatch).
-	runtimeOf := map[string]string{}
-	for runtime, ds := range parsed.Devices {
-		for _, d := range ds {
-			runtimeOf[d.UDID] = runtime
-		}
-	}
-	for i := range devices {
-		devices[i].RuntimeID = runtimeOf[devices[i].UDID]
 	}
 	return devices, nil
 }

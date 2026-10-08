@@ -250,7 +250,7 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 	}
 	sort.Strings(labels)
 	report.report(fmt.Sprintf("Stopping %d background services for this boot session...", len(labels)))
-	remaining := unloadInBatch(ctx, set, udid, labels, readPlistLabel, report)
+	remaining := unloadInBatch(ctx, set, udid, d.RuntimeID, labels, readPlistLabel, report)
 	if err := applyDelta(ctx, set, udid, remaining, nil, liveDisable, report); err != nil {
 		return changed, err
 	}
@@ -269,12 +269,11 @@ func EnableSlimNoReboot(ctx context.Context, set, udid string, p Profile, report
 // what still needs the per-label disable and bootout. Two spawns per label add
 // up on a busy host; one spawn per chunk does not. Anything that goes wrong
 // here only means more labels take the per-label path.
-func unloadInBatch(ctx context.Context, set, udid string, labels []string, plistLabel func(context.Context, string) (string, error), report Reporter) []string {
-	d, err := FindDevice(ctx, udid, set)
-	if err != nil || d.RuntimeID == "" {
+func unloadInBatch(ctx context.Context, set, udid, runtimeID string, labels []string, plistLabel func(context.Context, string) (string, error), report Reporter) []string {
+	if runtimeID == "" {
 		return labels
 	}
-	root, err := runtimeRoot(ctx, d.RuntimeID)
+	root, err := runtimeRoot(ctx, runtimeID)
 	if err != nil {
 		return labels
 	}
