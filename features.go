@@ -3,8 +3,8 @@ package simslim
 import "fmt"
 
 // Feature is a user-facing capability backed by specific launchd daemons.
-// Every label must also live in a Category (enforced in features_test.go), so a
-// feature only ever names daemons the tool could actually have turned off.
+// Every label must also be managed by a Category (enforced in features_test.go),
+// including required services that earlier versions could have turned off.
 type Feature struct {
 	ID     string   `json:"id"`
 	Name   string   `json:"name"`

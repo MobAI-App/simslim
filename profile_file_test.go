@@ -49,6 +49,19 @@ func TestLoadSlimProfileMinimal(t *testing.T) {
 	}
 }
 
+func TestLoadSlimProfileKeepsRequiredEnabledLabels(t *testing.T) {
+	// Keep existing workaround profiles valid after a service becomes required.
+	p, err := LoadSlimProfile(writeProfile(t, `{"keep": ["com.apple.gamed", "com.apple.sharingd"]}`))
+	if err != nil {
+		t.Fatalf("LoadSlimProfile() error = %v", err)
+	}
+	for _, label := range []string{"com.apple.gamed", "com.apple.sharingd"} {
+		if !p.Keep[label] || p.Desired()[label] {
+			t.Errorf("profile must keep required service %q enabled", label)
+		}
+	}
+}
+
 func TestLoadSlimProfileRejects(t *testing.T) {
 	tests := []struct {
 		name     string

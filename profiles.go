@@ -260,9 +260,14 @@ var Categories = []Category{
 			"com.apple.MapKit.SnapshotService",
 			"com.apple.jetpackassetd",
 			"com.apple.tipsd",
-			"com.apple.gamed",
 			"com.apple.gamesaved",
 			"com.apple.GameController.gamecontrollerd",
+		},
+		AlwaysEnabled: []AlwaysEnabledService{
+			{
+				Label:  "com.apple.gamed",
+				Reason: "Required for timely XCUITest app launches (DTServiceHub / GameKit).",
+			},
 		},
 	},
 	{

@@ -131,6 +131,21 @@ see the daemons in a category.
 
 </details>
 
+### XCUITest app launches
+
+`com.apple.gamed` stays enabled even when the `apps` category is slimmed. Xcode's
+`DTServiceHub` uses this GameKit service during XCUITest app launches. With Xcode
+27.0 (27A266a) and iOS 18.6, disabling it added about 10.4 seconds to each warm
+launch in a controlled test; keeping it enabled removed the delay with the rest
+of the profile unchanged. This measures XCTest's pre-automation launch gap,
+not the app's first visible frame; other Xcode/runtime combinations may differ.
+
+For older simslim releases, add `com.apple.gamed` to `--keep` (or a profile's
+`keep` array) before slimming a fresh simulator. After upgrading, a normal
+`simslim on <udid>` or `simslim off <udid>` repairs a previously disabled `gamed`
+through the reboot path. `on --no-reboot` does not re-enable already-disabled
+services, so adding `--keep` alone to an existing live slim session is insufficient.
+
 ### Slow CI runners
 
 `simslim on` boots the simulator, disables ~170 daemons one `launchctl` call at a
@@ -175,10 +190,11 @@ simslim on <udid> --profile ci.json
 ```
 
 `except` and `keep` mirror the flags of the same name; `name` and `description`
-are for whoever reads the file. Unknown fields, unknown category IDs, and labels
-that no category disables are rejected, so a typo fails loudly. `--profile` is the
-single source of truth for its run and cannot be combined with `--except` or
-`--keep`.
+are for whoever reads the file. Unknown fields, unknown category IDs, and
+unmanaged labels are rejected, so a typo fails loudly. `keep` also accepts
+always-enabled compatibility services, preserving older workaround profiles.
+`--profile` is the single source of truth for its run and cannot be combined with
+`--except` or `--keep`.
 
 To build one interactively, run `simslim profile ci.json`: name it, then use the
 arrow keys and space to tick whole features to keep enabled, or press `→` to open
