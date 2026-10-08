@@ -197,10 +197,9 @@ simslim on <udid> --profile ci.json
 ```
 
 `except` and `keep` mirror the flags of the same name; `name` and `description`
-are for whoever reads the file. Unknown fields, unknown category IDs, and labels
-that no category disables are rejected, so a typo fails loudly. `--profile` is the
-single source of truth for its run and cannot be combined with `--except` or
-`--keep`.
+are for whoever reads the file. Unknown fields, unknown category IDs, and
+unmanaged labels are rejected, so a typo fails loudly. `--profile` is the single
+source of truth for its run and cannot be combined with `--except` or `--keep`.
 
 To build one interactively, run `simslim profile ci.json`: name it, then use the
 arrow keys and space to tick whole features to keep enabled, or press `→` to open

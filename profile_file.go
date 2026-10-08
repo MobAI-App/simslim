@@ -44,13 +44,15 @@ func (sp SlimProfile) resolve(path string) (Profile, error) {
 		}
 		p.ExceptCategories[id] = true
 	}
-	slimmable := SlimmableSet()
+	// Accept keep entries for required services too: profiles written as
+	// workarounds before a service became AlwaysEnabled must remain valid.
+	managed := managedSet()
 	for _, label := range sp.Keep {
 		if label = strings.TrimSpace(label); label == "" {
 			continue
 		}
-		if !slimmable[label] {
-			return Profile{}, fmt.Errorf("profile %s: %q is not a daemon any category disables (see `simslim profiles`)", path, label)
+		if !managed[label] {
+			return Profile{}, fmt.Errorf("profile %s: %q is not a managed daemon (see `simslim profiles`)", path, label)
 		}
 		p.Keep[label] = true
 	}

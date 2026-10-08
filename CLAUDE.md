@@ -65,7 +65,8 @@ against the allowlist, and resolves it to a `Profile`. The dependency-free
 each feature (push, storekit, universal-links, …) names just the daemons one
 testable capability needs. `doctor` reads a booted simulator's disabled labels
 and reports any required feature whose daemons are down, exiting non-zero — a CI
-preflight. `features_test.go` asserts every feature label is slimmable.
+preflight. `features_test.go` asserts every feature label is managed, including
+required services that earlier versions could have disabled.
 `slim.go`'s `ensure()` rejects a non-empty slim profile on runtimes older than
 iOS/tvOS 18.5, watchOS 11.5, or visionOS 2.5 before booting or mutating the device, then reads the currently disabled
 labels, computes a `delta` against the desired set, and applies the changes with

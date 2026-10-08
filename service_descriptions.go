@@ -150,7 +150,6 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.MapKit.SnapshotService":         "Renders static map snapshots for apps.",
 	"com.apple.jetpackassetd":                  "Downloads assets used by Apple content apps.",
 	"com.apple.tipsd":                          "Selects and refreshes content for the Tips app.",
-	"com.apple.gamed":                          "Provides Game Center accounts and multiplayer state.",
 	"com.apple.gamesaved":                      "Synchronizes supported game save data.",
 	"com.apple.GameController.gamecontrollerd": "Discovers controllers and routes their input.",
 

@@ -155,6 +155,36 @@ func TestDeltaRepairsRequiredEnabledLabels(t *testing.T) {
 	}
 }
 
+func TestGamedStaysEnabledForXCTest(t *testing.T) {
+	const label = "com.apple.gamed"
+	desired := (Profile{}).Desired()
+	if SlimmableSet()[label] || desired[label] {
+		t.Error("gamed must stay enabled: disabling it delays XCUITest app launches")
+	}
+	apps, ok := CategoryByID("apps")
+	if !ok {
+		t.Fatal("apps category is missing")
+	}
+	found := false
+	for _, service := range apps.AlwaysEnabled {
+		if service.Label == label && strings.TrimSpace(service.Reason) != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("apps must explain why gamed stays enabled")
+	}
+	_, toEnable := delta(map[string]bool{label: true}, desired, managedSet())
+	if !reflect.DeepEqual(toEnable, []string{label}) {
+		t.Errorf("legacy disabled gamed repair = %v, want [%s]", toEnable, label)
+	}
+	for _, other := range []string{"com.apple.gamesaved", "com.apple.GameController.gamecontrollerd"} {
+		if !desired[other] {
+			t.Errorf("unrelated game service %q should remain slimmable", other)
+		}
+	}
+}
+
 func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
 	for _, c := range Categories {
 		if c.Downside == "" {
