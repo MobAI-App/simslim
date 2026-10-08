@@ -93,8 +93,10 @@ final class AppModel: ObservableObject {
   func disabledDaemonCount(for device: SimulatorDevice) -> Int {
     let allLabels = categories.reduce(into: Set<String>()) { $0.formUnion($1.labels) }
     var disabled = allLabels.subtracting(effectiveKeptLabels)
-    // Keep in sync with Profile.DesiredForDevice: watchOS re-enables homed.
+    // Keep in sync with Profile.DesiredForDevice: watchOS re-enables homed, and
+    // visionOS needs mobileassetd for its surroundings.
     if device.platform == "watchOS" { disabled.remove("com.apple.homed") }
+    if device.platform == "visionOS" { disabled.remove("com.apple.mobileassetd") }
     return disabled.count
   }
 

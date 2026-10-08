@@ -24,10 +24,11 @@ type Device struct {
 	UDID      string `json:"udid"`
 	Name      string `json:"name"`
 	State     string `json:"state"`    // "Booted" or "Shutdown"
-	Platform  string `json:"platform"` // "iOS", "tvOS", or "watchOS"
+	Platform  string `json:"platform"` // "iOS", "tvOS", "watchOS", or "visionOS"
 	OSVersion string `json:"osVersion"`
 	Set       string `json:"set"`
 	DataPath  string `json:"-"`
+	RuntimeID string `json:"-"` // e.g. com.apple.CoreSimulator.SimRuntime.iOS-26-5
 }
 
 // PlatformName preserves the iOS default for callers constructing Device values
@@ -147,6 +148,18 @@ func listDevicesInSet(ctx context.Context, set deviceSetInfo) ([]Device, error) 
 			devices = append(devices, Device{UDID: d.UDID, Name: d.Name, State: d.State, Platform: platform, OSVersion: version, Set: set.name, DataPath: d.DataPath})
 		}
 	}
+
+	// The runtime identifier leads to the runtime's RuntimeRoot, where the
+	// launchd job plists live (see unloadInBatch).
+	runtimeOf := map[string]string{}
+	for runtime, ds := range parsed.Devices {
+		for _, d := range ds {
+			runtimeOf[d.UDID] = runtime
+		}
+	}
+	for i := range devices {
+		devices[i].RuntimeID = runtimeOf[devices[i].UDID]
+	}
 	return devices, nil
 }
 
@@ -205,6 +218,9 @@ func parseRuntime(runtime string) (platform, version string) {
 	switch platform {
 	case "iOS", "tvOS", "watchOS":
 		return platform, strings.ReplaceAll(version, "-", ".")
+	case "xrOS":
+		// CoreSimulator still names the visionOS runtime xrOS.
+		return "visionOS", strings.ReplaceAll(version, "-", ".")
 	default:
 		return "", "?"
 	}
@@ -531,4 +547,44 @@ func WaitShutdown(ctx context.Context, set, udid string, timeout time.Duration) 
 		time.Sleep(500 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out waiting for %s to shut down", udid)
+}
+
+// runtimeRoot returns the host path of a CoreSimulator runtime's RuntimeRoot.
+// Simulator processes see the host file system, so launchctl inside the
+// simulator can read job plists by these paths.
+func runtimeRoot(ctx context.Context, runtimeID string) (string, error) {
+	out, err := exec.CommandContext(ctx, "xcrun", "simctl", "list", "runtimes", "-j").Output()
+	if err != nil {
+		return "", listError(err)
+	}
+	return parseRuntimeRoot(out, runtimeID)
+}
+
+// unloadJobs disables and unloads many jobs with one `launchctl unload -w`
+// spawn per chunk of unloadChunk plists, instead of a disable and a bootout
+// spawn per label. The exit status is not trusted: launchctl reports any single
+// failure for the whole call, so the caller reads the state back and retries
+// what is missing label by label. A chunk that runs out of time ends the
+// batch, so a slow host keeps the rest of its budget for that per-label path.
+func unloadJobs(ctx context.Context, set, udid string, paths []string) {
+	for start := 0; start < len(paths); start += unloadChunk {
+		end := min(start+unloadChunk, len(paths))
+		args := simctlArgs(set, append([]string{"spawn", udid, "launchctl", "unload", "-w"}, paths[start:end]...)...)
+		spawnCtx, cancel := context.WithTimeout(ctx, SpawnTimeout)
+		_ = exec.CommandContext(spawnCtx, "xcrun", args...).Run()
+		expired := spawnCtx.Err() != nil
+		cancel()
+		if expired {
+			return
+		}
+	}
+}
+
+// loadedLabels returns every label currently loaded in the simulator's launchd.
+func loadedLabels(ctx context.Context, set, udid string) (map[string]bool, error) {
+	out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, "spawn", udid, "launchctl", "list")...).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("launchctl list: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return parseLaunchctlList(string(out)), nil
 }

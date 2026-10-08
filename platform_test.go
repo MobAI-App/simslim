@@ -15,7 +15,9 @@ func TestParseRuntime(t *testing.T) {
 		{"com.apple.CoreSimulator.SimRuntime.tvOS-18-5", "tvOS", "18.5"},
 		{"com.apple.CoreSimulator.SimRuntime.watchOS-11-5-1", "watchOS", "11.5.1"},
 		{"com.apple.CoreSimulator.SimRuntime.watchOS-26-0", "watchOS", "26.0"},
-		{"com.apple.CoreSimulator.SimRuntime.xrOS-26-0", "", "?"},
+		{"com.apple.CoreSimulator.SimRuntime.xrOS-26-0", "visionOS", "26.0"},
+		{"com.apple.CoreSimulator.SimRuntime.xrOS-2-5", "visionOS", "2.5"},
+		{"com.apple.CoreSimulator.SimRuntime.visionOS-26-0", "", "?"},
 		{"com.apple.CoreSimulator.SimRuntime.not-iOS-26-0", "", "?"},
 		{"com.apple.CoreSimulator.SimRuntime.iOS-", "", "?"},
 		{"iOS-26-5", "", "?"},
@@ -55,11 +57,12 @@ esac
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	devices, err := ListDevices(context.Background())
-	if err != nil || len(devices) != 4 {
-		t.Fatalf("ListDevices = (%v, %v), want 4 supported, available devices", devices, err)
+	if err != nil || len(devices) != 5 {
+		t.Fatalf("ListDevices = (%v, %v), want 5 supported, available devices", devices, err)
 	}
 	want := map[string]Device{
 		"PHONE":  {Platform: "iOS", OSVersion: "26.5", Set: "default"},
+		"VISION": {Platform: "visionOS", OSVersion: "26.0", Set: "default"},
 		"TV":     {Platform: "tvOS", OSVersion: "26.0", Set: "default", DataPath: "/tmp/tv/data"},
 		"WATCH":  {Platform: "watchOS", OSVersion: "11.5", Set: "testing", DataPath: "/tmp/watch/data"},
 		"CUSTOM": {Platform: "tvOS", OSVersion: "18.5", Set: "/custom/devices"},
@@ -93,6 +96,8 @@ func TestDeviceSupportsPersistentOverrides(t *testing.T) {
 		{"watchOS", "26.0", true}, {"tvOS", "26.0", true},
 		{"watchOS", "?", false}, {"watchOS", "11", false},
 		{"watchOS", "26.-1", false}, {"xrOS", "26.0", false},
+		{"visionOS", "2.4", false}, {"visionOS", "2.5", true},
+		{"visionOS", "26.0", true}, {"visionOS", "27.0", true},
 	} {
 		d := Device{Platform: tt.platform, OSVersion: tt.version}
 		t.Run(d.RuntimeName(), func(t *testing.T) {
@@ -104,7 +109,7 @@ func TestDeviceSupportsPersistentOverrides(t *testing.T) {
 }
 
 func TestSlimAndRestoreAppleTVAndWatch(t *testing.T) {
-	for _, runtime := range []string{"tvOS-18-5", "watchOS-11-5", "tvOS-26-0", "watchOS-26-5"} {
+	for _, runtime := range []string{"tvOS-18-5", "watchOS-11-5", "tvOS-26-0", "watchOS-26-5", "xrOS-2-5", "xrOS-27-0"} {
 		t.Run(runtime, func(t *testing.T) {
 			const udid = "00000000-0000-0000-0000-0000000000F1"
 			useTempStoreRoot(t)
@@ -251,6 +256,46 @@ func TestWatchProfileKeepsHomedEnabled(t *testing.T) {
 	for _, call := range xcrunCalls(t, logPath) {
 		if strings.Contains(call, "launchctl disable system/com.apple.homed") || strings.Contains(call, "launchctl bootout system/com.apple.homed") {
 			t.Fatalf("Watch slimming tried to disable required service: %s", call)
+		}
+	}
+}
+
+func TestVisionProfileKeepsMobileAssetsEnabled(t *testing.T) {
+	const label = "com.apple.mobileassetd"
+	vision := Device{Platform: "visionOS", OSVersion: "27.0"}
+	for _, platform := range []string{"iOS", "tvOS", "watchOS", ""} {
+		if !(Profile{}).DesiredForDevice(Device{Platform: platform})[label] {
+			t.Errorf("mobileassetd unexpectedly excluded on %q", platform)
+		}
+	}
+	if (Profile{}).DesiredForDevice(vision)[label] {
+		t.Fatal("Vision profile disables mobileassetd, which serves the surroundings")
+	}
+	// A device slimmed before this exception existed gets mobileassetd back.
+	const udid = "00000000-0000-0000-0000-0000000000F5"
+	useTempStoreRoot(t)
+	logPath := fakeSimctl(t, udid, "xrOS-27-0", "Shutdown")
+	if err := writeDisabledStore(udid, []string{label}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := EnableSlim(ctx, "default", udid, Profile{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	st, disabled, err := ReadStatus(ctx, udid)
+	if err != nil || disabled[label] || st.ManagedTotal != len(SlimmableSet())-1 || st.ManagedDisabled != st.ManagedTotal {
+		t.Fatalf("Vision status = (%+v, %v), mobileassetd disabled = %t", st, err, disabled[label])
+	}
+	verified, err := VerifyProfile(ctx, udid, Profile{})
+	if err != nil || !verified.OK {
+		t.Fatalf("Vision profile verification = (%+v, %v)", verified, err)
+	}
+	if _, err := EnableSlimNoReboot(ctx, "default", udid, Profile{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range xcrunCalls(t, logPath) {
+		if strings.Contains(call, "launchctl disable system/"+label) || strings.Contains(call, "launchctl bootout system/"+label) {
+			t.Fatalf("Vision slimming tried to disable mobileassetd: %s", call)
 		}
 	}
 }

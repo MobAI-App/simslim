@@ -949,7 +949,7 @@ func fatal(msg string) {
 }
 
 func usage() {
-	fmt.Print(`simslim runs more iOS, tvOS, and watchOS simulators on the same Mac by disabling the
+	fmt.Print(`simslim runs more iOS, tvOS, watchOS, and visionOS simulators on the same Mac by disabling the
 background daemons a simulator does not need.
 
 USAGE

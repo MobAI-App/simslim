@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-simslim runs many more iOS, tvOS, and watchOS simulators on one Mac by disabling the background
+simslim runs many more iOS, tvOS, watchOS, and visionOS simulators on one Mac by disabling the background
 daemons a simulator doesn't need, cutting each simulator's memory ~4x. It is a Go
 CLI plus a SwiftUI macOS app that wraps it. Everything is driven through
 `xcrun simctl`; the tool only ever touches the simulators you point it at, never
@@ -67,20 +67,28 @@ testable capability needs. `doctor` reads a booted simulator's disabled labels
 and reports any required feature whose daemons are down, exiting non-zero — a CI
 preflight. `features_test.go` asserts every feature label is slimmable.
 `slim.go`'s `ensure()` rejects a non-empty slim profile on runtimes older than
-iOS/tvOS 18.5 or watchOS 11.5 before booting or mutating the device, then reads the currently disabled
+iOS/tvOS 18.5, watchOS 11.5, or visionOS 2.5 before booting or mutating the device, then reads the currently disabled
 labels, computes a `delta` against the desired set, and applies the changes with
 `launchctl disable/enable` run inside the simulator via `simctl spawn`, a pool of
 `spawnWorkers` (8) at a time. It reboots
 and reads the state back before reporting persistence. `on` disables the profile;
 `off` remains available on every runtime and re-enables the whole managed set.
 `Profile.DesiredForDevice` keeps `com.apple.homed` enabled on watchOS, which
-re-enables that service after startup. Slimming, verification, and per-device
+re-enables that service after startup, and `com.apple.mobileassetd` on visionOS,
+whose simulated surroundings are mobile assets. Slimming, verification, and per-device
 status totals use this platform-specific profile; `Profile.Desired` remains the
 platform-independent catalog for profile editors. `Device.Platform` identifies
-iOS, tvOS, or watchOS; an empty platform defaults to iOS for library callers.
+iOS, tvOS, watchOS, or visionOS (CoreSimulator's `xrOS` runtimes); an empty platform defaults to iOS for library callers.
 `EnableSlimNoReboot` (`on --no-reboot`) skips the reboot: it runs `launchctl
 disable` + `launchctl bootout` per label so the daemon stops in the current boot
 session, which is the only slimming possible on runtimes older than iOS 18.5.
+Before that per-label pass, `unloadInBatch` stops most labels at once: it finds
+each label's job plist under the runtime's RuntimeRoot (`Device.RuntimeID` →
+`runtimeRoot`, used only when the plist's own `Label` matches) and passes them to
+one `launchctl unload -w` per 64 plists, which writes the same override as
+`disable` and removes the job like `bootout`. It then reads `print-disabled` and
+`launchctl list` back, and only labels still enabled or loaded take the
+per-label path; any failure in the batch just means more labels do.
 
 **The offline fast path.** On a runtime with persistent overrides `ensureOffline`
 takes over: `disabled_store.go` writes the overrides directly and boots the
@@ -90,7 +98,8 @@ there too — an override only takes effect at the next boot, so `ensure` reads 
 live state, returns early when the profile already matches, and otherwise spends
 the shutdown the device already owed before handing off. There is no shell inside
 any iOS runtime (`RuntimeRoot/bin` holds only `df` and `launchctl`), so batching
-transitions through a spawned `/bin/sh` is not an option; the pool is. `launchd_sim` is a *host* process, so that store is not in the
+transitions through a spawned `/bin/sh` is not an option; the offline path uses
+the pool. `launchd_sim` is a *host* process, so that store is not in the
 device's data directory — it sits beside the device's `launchd.log` in
 `/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist`, keyed
 only by UDID. It is an undocumented CoreSimulator detail, so treat it as

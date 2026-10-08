@@ -423,6 +423,12 @@ func desiredForDevice(d Device, desired map[string]bool) map[string]bool {
 		if d.PlatformName() == "watchOS" && label == "com.apple.homed" {
 			continue
 		}
+		// visionOS serves the simulated surroundings as mobile assets.
+		// Without mobileassetd the device boots into a black space: the
+		// Home View icons float in the dark, and apps still launch.
+		if d.PlatformName() == "visionOS" && label == "com.apple.mobileassetd" {
+			continue
+		}
 		set[label] = disabled
 	}
 	return set
