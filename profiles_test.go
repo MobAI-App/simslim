@@ -215,6 +215,17 @@ func TestAssistantdStaysEnabledForSpotlight(t *testing.T) {
 	}
 }
 
+func TestWidgetsKeepNavdForMapsWidget(t *testing.T) {
+	const label = "com.apple.navd"
+	widgets := Profile{ExceptCategories: map[string]bool{"widgets": true}, Keep: map[string]bool{}}
+	if widgets.Desired()[label] {
+		t.Error("--except widgets must keep navd enabled: the Maps widget spins without it")
+	}
+	if !(Profile{}).Desired()[label] {
+		t.Error("navd should remain slimmable when widgets are disabled")
+	}
+}
+
 func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
 	for _, c := range Categories {
 		if c.Downside == "" {
