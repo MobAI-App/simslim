@@ -62,6 +62,20 @@ func TestGameCenterDiagnosesLegacyDisabledGamed(t *testing.T) {
 	}
 }
 
+func TestWidgetsDiagnoseDisabledNavd(t *testing.T) {
+	features, err := ResolveFeatures([]string{"widgets"})
+	if err != nil {
+		t.Fatalf("ResolveFeatures(widgets) error = %v", err)
+	}
+	if !DiagnoseFeatures(features, map[string]bool{}).OK {
+		t.Error("widgets should be healthy with navd enabled")
+	}
+	report := DiagnoseFeatures(features, map[string]bool{"com.apple.navd": true})
+	if report.OK || len(report.Features) != 1 || !reflect.DeepEqual(report.Features[0].Disabled, []string{"com.apple.navd"}) {
+		t.Errorf("doctor must report widgets kept without navd: %+v", report)
+	}
+}
+
 func TestDiagnoseFeatures(t *testing.T) {
 	features, err := ResolveFeatures([]string{"push", "storekit", "universal-links"})
 	if err != nil {

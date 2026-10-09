@@ -40,6 +40,10 @@ var Categories = []Category{
 			"com.apple.PosterBoard",
 			"com.apple.chronod",
 			"com.apple.liveactivitiesd",
+			// chronod runs the stock Maps widget, which retries its navd
+			// connection in a tight loop while navd is down and floods the
+			// unified log; shared with the connectivity category.
+			"com.apple.navd",
 		},
 	},
 	{
