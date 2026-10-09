@@ -11,7 +11,6 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.liveactivitiesd": "Updates Live Activities and Dynamic Island content.",
 
 	// Siri & Intelligence
-	"com.apple.assistantd":             "Coordinates Siri requests and assistant state.",
 	"com.apple.assistant_cdmd":         "Routes commands and intents submitted to Siri.",
 	"com.apple.assistant_service":      "Provides supporting services for Siri requests.",
 	"com.apple.siriactionsd":           "Executes Siri actions and App Intents.",
