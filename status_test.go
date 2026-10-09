@@ -10,7 +10,7 @@ func TestDroppedCategories(t *testing.T) {
 	disabled := map[string]bool{
 		search.Labels[0]:            true,
 		search.Labels[1]:            true,
-		"com.apple.assistantd":      true,
+		"com.apple.assistant_cdmd":  true,
 		"com.apple.not-a-managed-d": true,
 	}
 
@@ -26,8 +26,8 @@ func TestDroppedCategories(t *testing.T) {
 	if labels := byID["search"].Labels; len(labels) != 2 {
 		t.Errorf("search dropped labels = %v, want 2", labels)
 	}
-	if labels := byID["siri"].Labels; len(labels) != 1 || labels[0] != "com.apple.assistantd" {
-		t.Errorf("siri dropped labels = %v, want [com.apple.assistantd]", labels)
+	if labels := byID["siri"].Labels; len(labels) != 1 || labels[0] != "com.apple.assistant_cdmd" {
+		t.Errorf("siri dropped labels = %v, want [com.apple.assistant_cdmd]", labels)
 	}
 	for _, c := range got {
 		if c.Downside == "" {

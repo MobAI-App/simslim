@@ -71,7 +71,7 @@ func TestRunProfileWizard(t *testing.T) {
 			// Drill into siri (row 2), keep its first daemon, back out, save.
 			name:     "drill in keeps an individual daemon",
 			input:    "\n\n" + arrowDown + arrowRight + space + arrowLeft + enter,
-			wantKeep: []string{"com.apple.assistantd"},
+			wantKeep: []string{"com.apple.assistant_cdmd"},
 		},
 		{
 			// A kept daemon is dropped when its whole feature is also kept.

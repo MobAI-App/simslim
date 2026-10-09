@@ -185,6 +185,36 @@ func TestGamedStaysEnabledForXCTest(t *testing.T) {
 	}
 }
 
+func TestAssistantdStaysEnabledForSpotlight(t *testing.T) {
+	const label = "com.apple.assistantd"
+	desired := (Profile{}).Desired()
+	if SlimmableSet()[label] || desired[label] {
+		t.Error("assistantd must stay enabled: without its dictation service Spotlight leaks memory")
+	}
+	siri, ok := CategoryByID("siri")
+	if !ok {
+		t.Fatal("siri category is missing")
+	}
+	found := false
+	for _, service := range siri.AlwaysEnabled {
+		if service.Label == label && strings.TrimSpace(service.Reason) != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("siri must explain why assistantd stays enabled")
+	}
+	_, toEnable := delta(map[string]bool{label: true}, desired, managedSet())
+	if !reflect.DeepEqual(toEnable, []string{label}) {
+		t.Errorf("legacy disabled assistantd repair = %v, want [%s]", toEnable, label)
+	}
+	for _, other := range []string{"com.apple.assistant_service", "com.apple.corespeechd", "com.apple.siriknowledged"} {
+		if !desired[other] {
+			t.Errorf("other Siri service %q should remain slimmable", other)
+		}
+	}
+}
+
 func TestCategoriesHaveUserImpactMetadata(t *testing.T) {
 	for _, c := range Categories {
 		if c.Downside == "" {

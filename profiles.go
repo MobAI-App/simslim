@@ -49,7 +49,6 @@ var Categories = []Category{
 		Downside:       "Siri, speech features, and Apple Intelligence services are unavailable.",
 		ApproxMemoryMB: 265,
 		Labels: []string{
-			"com.apple.assistantd",
 			"com.apple.assistant_cdmd",
 			"com.apple.assistant_service",
 			"com.apple.siriactionsd",
@@ -78,6 +77,12 @@ var Categories = []Category{
 			"com.apple.parsecd",
 			"com.apple.parsec-fbf",
 			"com.apple.proactiveeventtrackerd",
+		},
+		AlwaysEnabled: []AlwaysEnabledService{
+			{
+				Label:  "com.apple.assistantd",
+				Reason: "Hosts the dictation service; without it the system Spotlight app leaks memory.",
+			},
 		},
 	},
 	{
