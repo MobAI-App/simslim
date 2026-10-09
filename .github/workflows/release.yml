@@ -66,6 +66,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.SIMSLIM_RELEASE_TAG }}
+          generate_release_notes: true
           files: |
             simslim-*-macos-arm64.tar.gz
             simslim-*.bottle*.tar.gz
