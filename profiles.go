@@ -93,7 +93,7 @@ var Categories = []Category{
 		ID:             "search",
 		Name:           "Spotlight & Search",
 		Description:    "On-device Spotlight and in-Settings search services.",
-		Downside:       "Spotlight and Settings search return no results.",
+		Downside:       "Spotlight and Settings search return no results, and Recents in Files and the document picker fails to load.",
 		ApproxMemoryMB: 50,
 		Labels: []string{
 			"com.apple.searchd",

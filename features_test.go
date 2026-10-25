@@ -76,6 +76,20 @@ func TestWidgetsDiagnoseDisabledNavd(t *testing.T) {
 	}
 }
 
+func TestFilesRecentsDiagnoseDisabledSearchd(t *testing.T) {
+	features, err := ResolveFeatures([]string{"files-recents"})
+	if err != nil {
+		t.Fatalf("ResolveFeatures(files-recents) error = %v", err)
+	}
+	if !DiagnoseFeatures(features, map[string]bool{"com.apple.searchtoold": true}).OK {
+		t.Error("files-recents should be healthy with searchd enabled")
+	}
+	report := DiagnoseFeatures(features, map[string]bool{"com.apple.searchd": true})
+	if report.OK || len(report.Features) != 1 || !reflect.DeepEqual(report.Features[0].Disabled, []string{"com.apple.searchd"}) {
+		t.Errorf("doctor must report Files Recents without searchd: %+v", report)
+	}
+}
+
 func TestDiagnoseFeatures(t *testing.T) {
 	features, err := ResolveFeatures([]string{"push", "storekit", "universal-links"})
 	if err != nil {
