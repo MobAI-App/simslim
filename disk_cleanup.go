@@ -317,12 +317,17 @@ func diskCleanupTargets(dataDirectory, categoryID string) ([]string, error) {
 
 func findNamedDirectories(root, name string, excludedAncestors map[string]bool) ([]string, error) {
 	var targets []string
+	bundleDirectory := filepath.Join(root, "Containers", "Bundle")
 	err := filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if !entry.IsDir() || current == root {
 			return nil
+		}
+		// Packaged resources are durable even when named Caches, Logs, or tmp.
+		if current == bundleDirectory {
+			return filepath.SkipDir
 		}
 		if isProtectedCleanupSubtree(entry.Name()) {
 			return filepath.SkipDir

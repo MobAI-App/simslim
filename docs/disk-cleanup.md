@@ -115,6 +115,8 @@ allowing runtime paths into a cleanup plan.
 - Name-based discovery skips Documents, media, and MobileAsset trees so a
   user-created folder named `Caches`, `Logs`, or `tmp` is never enough to make
   durable content eligible for cleanup.
+- Installed bundle storage (`Containers/Bundle`) is skipped entirely, including
+  packaged resources named `Caches`, `Logs`, or `tmp` in apps, extensions, and frameworks.
 - Downloaded language cleanup uses one exact MobileAsset catalog path; required
   Siri, speech, and voice catalogs are rejected by selection validation.
 - Only directory contents are removed; required container directories remain.
