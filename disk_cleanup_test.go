@@ -142,6 +142,80 @@ func TestDiskCleanupPlanAndCleanStayInsideAllowlist(t *testing.T) {
 	}
 }
 
+func TestDiskCleanupPreservesInstalledBundles(t *testing.T) {
+	for _, test := range []struct {
+		categoryID string
+		name       string
+	}{
+		{"caches", "Caches"},
+		{"logs", "Logs"},
+		{"temporary", "tmp"},
+	} {
+		t.Run(test.categoryID, func(t *testing.T) {
+			dataDirectory := filepath.Join(t.TempDir(), "data")
+			bundleDirectory := filepath.Join(dataDirectory, "Containers", "Bundle", "Application")
+			appDirectory := filepath.Join(bundleDirectory, "APP", "Example.app")
+			var resources []string
+			for _, directory := range []string{
+				appDirectory,
+				filepath.Join(appDirectory, "PlugIns", "Example.appex"),
+				filepath.Join(appDirectory, "Frameworks", "Example.framework"),
+			} {
+				resource := filepath.Join(directory, test.name, "keep.bin")
+				writeTestFile(t, resource, 4096)
+				resources = append(resources, resource)
+			}
+			cleanupDirectory := filepath.Join(dataDirectory, "Containers", "Data", "Application", "DATA", "Library", test.name)
+			if test.categoryID == "temporary" {
+				cleanupDirectory = filepath.Join(dataDirectory, "Containers", "Data", "Application", "DATA", "tmp")
+			}
+			cleanupFile := filepath.Join(cleanupDirectory, "remove.bin")
+			writeTestFile(t, cleanupFile, 8192)
+			cleanupBytes, err := allocatedSize(cleanupDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundleBytes, err := allocatedSize(bundleDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			plan, err := diskCleanupPlanAt("TEST-UDID", dataDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.CleanableBytes != cleanupBytes {
+				t.Errorf("cleanable bytes = %d, want only disposable data: %d", plan.CleanableBytes, cleanupBytes)
+			}
+			for _, category := range plan.Categories {
+				if category.ID == test.categoryID && category.Targets != 1 {
+					t.Errorf("cleanup targets = %d, want only the app data directory", category.Targets)
+				}
+			}
+			for _, storage := range plan.Storage {
+				if storage.ID == "installed-apps" && storage.Bytes != bundleBytes {
+					t.Errorf("installed app bytes = %d, want %d", storage.Bytes, bundleBytes)
+				}
+			}
+
+			if _, err := cleanDiskAt("TEST-UDID", dataDirectory, []string{test.categoryID}); err != nil {
+				t.Fatal(err)
+			}
+			for _, resource := range resources {
+				if _, err := os.Stat(resource); err != nil {
+					t.Errorf("cleanup touched installed bundle resource %s: %v", resource, err)
+				}
+			}
+			if _, err := os.Stat(cleanupFile); !os.IsNotExist(err) {
+				t.Errorf("disposable file was not removed: %v", err)
+			}
+			if info, err := os.Stat(cleanupDirectory); err != nil || !info.IsDir() {
+				t.Errorf("cleanup must preserve the disposable directory: %v", err)
+			}
+		})
+	}
+}
+
 func TestDiskCleanupRejectsIntermediateSymlink(t *testing.T) {
 	root := t.TempDir()
 	dataDirectory := filepath.Join(root, "data")
