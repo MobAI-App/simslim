@@ -471,6 +471,7 @@ check one against a specific profile.
 Turning services off is fine for most development, UI automation, and CI, but some features genuinely stop working. The ones worth knowing:
 
 - Spotlight and in-Settings search return nothing (`search`).
+- Recents in the Files app and the document picker shows "Content Unavailable" without `searchd` (`search`).
 - Push notifications need `apsd`, StoreKit testing needs `storekitd` (`store`).
 - Universal links need `swcd` (`web`).
 - The Contacts, Photos, and Calendar pickers can act up without their categories.

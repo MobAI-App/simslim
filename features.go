@@ -30,6 +30,9 @@ var Features = []Feature{
 	{ID: "app-store", Name: "App Store", Labels: []string{"com.apple.appstored", "com.apple.itunesstored"}},
 	{ID: "universal-links", Name: "Universal links / associated domains", Labels: []string{"com.apple.swcd"}},
 	{ID: "spotlight", Name: "Spotlight & Settings search", Labels: []string{"com.apple.searchd", "com.apple.searchtoold"}},
+	// Files and the document picker load Recents through a Spotlight query
+	// that searchd serves; without it the tab shows "Content Unavailable".
+	{ID: "files-recents", Name: "Files & document picker Recents", Labels: []string{"com.apple.searchd"}},
 	{ID: "siri", Name: "Siri & speech", Labels: []string{"com.apple.assistantd", "com.apple.corespeechd"}},
 	{ID: "icloud", Name: "iCloud sync", Labels: []string{"com.apple.cloudd"}},
 	{ID: "keychain-sync", Name: "iCloud Keychain", Labels: []string{"com.apple.akd"}},
