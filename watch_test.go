@@ -382,7 +382,7 @@ const newDevicePlist = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>isDeleted</key>
 	<false/>
 	<key>name</key>
-	<string>v4-1-a</string>
+	<string>sim-1-a</string>
 	<key>runtime</key>
 	<string>com.apple.CoreSimulator.SimRuntime.iOS-26-5</string>
 	<key>state</key>
