@@ -323,14 +323,28 @@ simslim enable <udid> icloud --save dev.json   # on now, and in dev.json
 simslim watch --profile dev.json               # keeps iCloud on at every boot
 ```
 
-### Slimming parallel-testing clones
+### Slimming every new simulator, from its first boot
 
-`xcodebuild` parallel testing creates a fresh clone per worker in its own device
-set, runs the tests, and deletes the clones when the run ends. The clones are
-created stock, and disable overrides do not survive `simctl clone`, so there is
-no device to slim ahead of time. `simslim watch` closes that gap: it polls the
-device sets and slims each simulator no-reboot the moment it boots, then leaves
-it alone until it boots again. A clone slimmed a few seconds into a multi-minute
+`simslim watch` keeps every simulator slim without a command per device. A
+simulator that is shut down, on a runtime that persists overrides (iOS/tvOS
+18.5, watchOS 11.5, visionOS 2.5 or newer), is slimmed before it boots: watch
+writes the profile's disable overrides into its launchd store, so its next boot
+starts none of those daemons. That includes a simulator's very first boot:
+watch lists the device-set directories every 50ms and seeds a new device from
+its own `device.plist`, without waiting for `simctl list`. A boot that starts
+before the seed lands is slimmed as it boots instead, and comes up slim from its
+next boot; a script that boots right after `simctl create` can wait for
+`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist` to appear
+first.
+Watch only ever adds disables there, as it does after boot: a service disabled
+beyond the profile stays disabled until `simslim off`.
+
+Every simulator is also slimmed no-reboot the moment it boots, which reads the
+device back and covers whatever booted before watch could seed it. That is the
+only hook for `xcodebuild` parallel-testing clones: parallel testing creates a
+fresh clone per worker in its own device set, runs the tests, and deletes the
+clones when the run ends. The clones are created stock, and disable overrides do
+not survive `simctl clone`. A clone slimmed a few seconds into a multi-minute
 run keeps its freed memory for the rest of the run. A failed slim is retried on
 the next scan, and a device that shut down and booted again is slimmed again,
 because on older runtimes a no-reboot slim ends with the boot session.

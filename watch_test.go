@@ -48,7 +48,7 @@ exit 0
 }
 
 func newTestWatcher(slim slimStrategy, report Reporter) *watcher {
-	return &watcher{report: report, slim: slim, seen: map[string]bool{}}
+	return &watcher{report: report, slim: slim, seen: map[string]bool{}, seeded: map[string]bool{}}
 }
 
 // TestWatchSlimsEachBootedDeviceOnce verifies the scan slims a booted device
@@ -206,5 +206,212 @@ func TestWatchWaitsForInFlightSlims(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("watch did not return after the in-flight slim finished")
+	}
+}
+
+// TestWatchSeedsShutdownDeviceBeforeBoot verifies a shut-down device is slimmed
+// ahead of its boot once, not on every scan, is handed to the after-boot slim
+// when it boots, and is checked again after its next shutdown.
+func TestWatchSeedsShutdownDeviceBeforeBoot(t *testing.T) {
+	rewrite := fakeDeviceList(t, shutdownClone)
+
+	var mu sync.Mutex
+	slims := 0
+	fake := func(_ context.Context, _, _ string, _ Profile, _ Reporter) (bool, error) {
+		mu.Lock()
+		slims++
+		mu.Unlock()
+		return true, nil
+	}
+	var seeds []string
+	w := newTestWatcher(fake, nil)
+	w.preslim = func(d Device, _ Profile) (int, error) {
+		seeds = append(seeds, d.UDID+" "+d.State)
+		return 3, nil
+	}
+	for _, devices := range []string{shutdownClone, shutdownClone, bootedClone, shutdownClone, shutdownClone} {
+		rewrite(devices)
+		w.scan(context.Background())
+		w.wg.Wait()
+	}
+
+	if want := []string{"AAAA Shutdown", "AAAA Shutdown"}; !slices.Equal(seeds, want) {
+		t.Fatalf("seeded %q, want %q (once per shutdown)", seeds, want)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if slims != 1 {
+		t.Fatalf("after-boot slim ran %d times, want 1", slims)
+	}
+}
+
+// TestWatchRetriesSeedAfterError verifies a store that could not be written is
+// tried again on the next scan.
+func TestWatchRetriesSeedAfterError(t *testing.T) {
+	fakeDeviceList(t, shutdownClone)
+
+	attempts := 0
+	w := newTestWatcher(nil, nil)
+	w.preslim = func(Device, Profile) (int, error) {
+		attempts++
+		if attempts == 1 {
+			return 0, errors.New("read-only store")
+		}
+		return 0, nil
+	}
+	for i := 0; i < 3; i++ {
+		w.scan(context.Background())
+	}
+	if attempts != 2 {
+		t.Fatalf("seed attempted %d times, want 2 (one failure, one retry)", attempts)
+	}
+}
+
+// TestPreslimDeviceAddsOnlyDisables verifies the store gains the profile's
+// disables and nothing else: an excepted service someone disabled stays
+// disabled, the runtime's own entries survive, and a second pass is a no-op.
+func TestPreslimDeviceAddsOnlyDisables(t *testing.T) {
+	root := useTempStoreRoot(t)
+	p, err := BuildProfile("", "store,icloud", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var excepted string
+	for _, c := range Categories {
+		if c.ID == "store" {
+			excepted = c.Labels[0]
+		}
+	}
+	if err := writeDisabledStore("AAAA", []string{excepted}, []string{"com.example.runtime-own"}); err != nil {
+		t.Fatal(err)
+	}
+	d := Device{UDID: "AAAA", State: "Shutdown", Platform: "iOS", OSVersion: "26.5"}
+
+	n, err := preslimDevice(d, p)
+	if err != nil {
+		t.Fatalf("preslimDevice() error = %v", err)
+	}
+	desired := p.DesiredForDevice(d)
+	if n != len(desired) {
+		t.Fatalf("preslimDevice() added %d, want %d", n, len(desired))
+	}
+	entries, err := readStoreEntries("AAAA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label := range desired {
+		if !entries[label] {
+			t.Errorf("%s not disabled in the store", label)
+		}
+	}
+	if !entries[excepted] {
+		t.Errorf("excepted %s was re-enabled; only `simslim off` may do that", excepted)
+	}
+	if off, ok := entries["com.example.runtime-own"]; !ok || off {
+		t.Errorf("runtime's own enable entry = %v, %v; want kept as enabled", off, ok)
+	}
+	if n, err := preslimDevice(d, p); err != nil || n != 0 {
+		t.Fatalf("second preslimDevice() = %d, %v; want 0, nil", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "com.apple.CoreSimulator.SimDevice.AAAA", "disabled.plist")); err != nil {
+		t.Fatalf("store not at the launchd_sim path: %v", err)
+	}
+}
+
+// TestPreslimDeviceLeavesOtherDevicesAlone verifies a booted device and a
+// runtime that cannot persist overrides get no store.
+func TestPreslimDeviceLeavesOtherDevicesAlone(t *testing.T) {
+	useTempStoreRoot(t)
+	for _, d := range []Device{
+		{UDID: "BOOTED", State: "Booted", OSVersion: "26.5"},
+		{UDID: "OLD", State: "Shutdown", OSVersion: "18.3"},
+	} {
+		if n, err := preslimDevice(d, Profile{}); err != nil || n != 0 {
+			t.Fatalf("preslimDevice(%s) = %d, %v; want 0, nil", d.UDID, n, err)
+		}
+		if _, err := os.Stat(disabledStorePath(d.UDID)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("store written for %s: %v", d.UDID, err)
+		}
+	}
+}
+
+// TestPollDeviceDirsReportsNewDevice verifies a device created after the poll
+// starts is reported with its set, and the devices already there are not.
+func TestPollDeviceDirsReportsNewDevice(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "OLD"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	created := make(chan deviceDir, 4)
+	done := make(chan struct{})
+	go func() {
+		pollDeviceDirs(ctx, map[string]string{dir: "default", filepath.Join(dir, "missing"): "testing"}, time.Millisecond, func(d deviceDir) { created <- d })
+		close(done)
+	}()
+
+	select {
+	case d := <-created:
+		t.Fatalf("an existing device was reported: %v", d)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := os.Mkdir(filepath.Join(dir, "NEW"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case d := <-created:
+		if want := (deviceDir{path: filepath.Join(dir, "NEW"), set: "default"}); d != want {
+			t.Fatalf("reported %v, want %v", d, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a new device was not reported")
+	}
+	cancel()
+	<-done
+}
+
+const newDevicePlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>UDID</key>
+	<string>CCCC</string>
+	<key>deviceType</key>
+	<string>com.apple.CoreSimulator.SimDeviceType.iPhone-17</string>
+	<key>isDeleted</key>
+	<false/>
+	<key>name</key>
+	<string>sim-1-a</string>
+	<key>runtime</key>
+	<string>com.apple.CoreSimulator.SimRuntime.iOS-26-5</string>
+	<key>state</key>
+	<integer>1</integer>
+</dict>
+</plist>
+`
+
+// TestSeedNewReadsDevicePlist verifies a new device is slimmed from its own
+// device.plist, without a simctl listing, once the file appears.
+func TestSeedNewReadsDevicePlist(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "CCCC")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var seeds []Device
+	w := newTestWatcher(nil, nil)
+	w.preslim = func(d Device, _ Profile) (int, error) {
+		seeds = append(seeds, d)
+		return 0, nil
+	}
+	go func() {
+		time.Sleep(30 * time.Millisecond) // simctl create writes device.plist after the directory
+		os.WriteFile(filepath.Join(dir, "device.plist"), []byte(newDevicePlist), 0o644)
+	}()
+	w.seedNew(context.Background(), deviceDir{path: dir, set: "default"})
+
+	want := Device{UDID: "CCCC", State: "Shutdown", Platform: "iOS", OSVersion: "26.5", Set: "default", DataPath: filepath.Join(dir, "data"), RuntimeID: "com.apple.CoreSimulator.SimRuntime.iOS-26-5"}
+	if len(seeds) != 1 || seeds[0] != want {
+		t.Fatalf("seeded %+v, want [%+v]", seeds, want)
 	}
 }

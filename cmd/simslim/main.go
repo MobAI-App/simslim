@@ -833,10 +833,11 @@ func onNoReboot(ctx context.Context, device simslim.Device, p simslim.Profile, r
 	return nil
 }
 
-// cmdWatch slims every simulator no-reboot as it boots, until Ctrl-C. It is the
-// hook for xcodebuild parallel-testing clones, which are created stock and
-// deleted per run: point --set at the parallel-testing device set and run this
-// alongside the test invocation.
+// cmdWatch slims every simulator until Ctrl-C: a shut-down one before it boots,
+// by writing its launchd overrides, and every one no-reboot as it boots. It is
+// also the hook for xcodebuild parallel-testing clones, which are created stock
+// and deleted per run: point --set at the parallel-testing device set and run
+// this alongside the test invocation.
 func cmdWatch(ctx context.Context, cmd *cli.Command) error {
 	p, err := simslim.BuildProfile(cmd.String("profile"), cmd.String("except"), cmd.String("keep"))
 	if err != nil {
@@ -844,7 +845,7 @@ func cmdWatch(ctx context.Context, cmd *cli.Command) error {
 	}
 	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	sets := append([]string{"default", "testing"}, simslim.ExtraDeviceSetTokens()...)
-	fmt.Fprintf(os.Stderr, "Watching device sets [%s]; slimming each simulator no-reboot as it boots. Ctrl-C to stop.\n", strings.Join(sets, ", "))
+	fmt.Fprintf(os.Stderr, "Watching device sets [%s]; slimming each simulator before it boots where its runtime allows, and no-reboot as it boots. Ctrl-C to stop.\n", strings.Join(sets, ", "))
 	return simslim.Watch(ctx, p, cmd.Duration("interval"), report)
 }
 
@@ -1098,8 +1099,11 @@ COMMANDS
                        that is fully enabled keeps running. To go back to a
                        profile, run ` + "`on <udid> --no-reboot --profile path`" + `
       --save path      Also remove them from this profile file
-  watch                Slim every simulator no-reboot as it boots, until Ctrl-C.
-                       The hook for xcodebuild parallel-testing clones, which are
+  watch                Slim every simulator until Ctrl-C: a shut-down one before
+                       it boots (iOS/tvOS 18.5+, watchOS 11.5+, visionOS 2.5+),
+                       so even its first boot starts none of the profile's
+                       daemons, and every one no-reboot as it boots. The hook
+                       for xcodebuild parallel-testing clones, which are
                        created stock and deleted per run; point --set at the
                        parallel-testing device set
       --profile path   Apply a committed JSON profile (see below); mutually
