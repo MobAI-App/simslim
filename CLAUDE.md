@@ -109,6 +109,12 @@ there, and unmanaged labels are never simslim's business), the booted device is
 always read back with `print-disabled` rather than trusted, and anything that
 does not work out returns `errOfflineIneffective` so `ensure` falls back to the
 `launchctl` path. A store problem must never surface as a command failure.
+`watch.go` uses the same store to slim a shut-down device before it boots
+(`preslimDevice`): it only adds the profile's disables. It lists the device-set
+directories every 50ms and seeds a new device from its `device.plist`
+(`seedNew`), since a `simctl list` on a loaded host takes longer than a script
+waits between `simctl create` and boot. A boot that starts first is logged and
+caught by the no-reboot slim at boot, which stays as the read-back and fallback.
 
 **Live enable/disable.** `live.go` holds `EnableServices`/`DisableServices`
 (`simslim enable`/`disable`), which act on a booted simulator only and keep no
