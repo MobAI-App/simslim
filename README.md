@@ -334,7 +334,8 @@ watch lists the device-set directories every 50ms and seeds a new device from
 its own `device.plist`, without waiting for `simctl list`. A boot that starts
 before the seed lands is slimmed as it boots instead, and comes up slim from its
 next boot; a script that boots right after `simctl create` can wait for
-`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>` to appear first.
+`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist` to appear
+first.
 Watch only ever adds disables there, as it does after boot: a service disabled
 beyond the profile stays disabled until `simslim off`.
 
