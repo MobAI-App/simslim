@@ -187,6 +187,11 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.purplebuddy.budd":      "Maintains Setup Assistant completion state.",
 	"com.apple.devicecheckd":          "Provides DeviceCheck and app-attestation services.",
 
+	// Device Management
+	"com.apple.remotemanagementd":     "Applies declarative device management configurations.",
+	"com.apple.RemoteManagementAgent": "Applies per-user declarative management configurations.",
+	"com.apple.managedassetsd":        "Downloads assets referenced by management declarations.",
+
 	// Other Background Services
 	"com.apple.financed":                          "Provides Wallet transaction and finance services.",
 	"com.apple.passd":                             "Manages Wallet passes and Apple Pay state.",
@@ -202,6 +207,8 @@ var serviceDescriptionByLabel = map[string]string{
 	"com.apple.countryd":                          "Determines regional availability for system features.",
 	"com.apple.mobileassetd":                      "Downloads and manages system asset packages. Kept enabled on visionOS.",
 	"com.apple.managedconfiguration.passcodenagd": "Enforces managed passcode requirements.",
+	"com.apple.accessibility.axassetsd":           "Downloads accessibility assets such as speech voices.",
+	"com.apple.ClipServices.clipserviced":         "Downloads, launches, and manages App Clips.",
 }
 
 func init() {

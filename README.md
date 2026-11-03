@@ -147,7 +147,8 @@ simslim on <udid> --keep com.apple.apsd
 | `messaging` | Messaging & FaceTime | iMessage, FaceTime, call, and identity services. | 60 |
 | `connectivity` | Sharing & Device Connectivity | AirDrop, Continuity, CarPlay, Watch, and Find My services. | 65 |
 | `telemetry` | Ads, Diagnostics & Telemetry | DeviceCheck, ad privacy, analytics, diagnostics, and feedback services. | 105 |
-| `other` | Other Background Services | Wallet, business services, assets, and miscellaneous background daemons. | 195 |
+| `mdm` | Device Management | Declarative device management and managed asset services. | 10 |
+| `other` | Other Background Services | Wallet, App Clips, business services, assets, and miscellaneous background daemons. | 225 |
 
 Memory figures are iOS 26.5 clean-boot medians and are not additive; see the
 [measurement method](docs/category-memory.md). Run `simslim profiles <id>` to
@@ -157,7 +158,7 @@ see the daemons in a category.
 
 ### Slow CI runners
 
-`simslim on` boots the simulator, disables ~170 daemons one `launchctl` call at a
+`simslim on` boots the simulator, disables ~175 daemons one `launchctl` call at a
 time, then reboots — all under a single 10-minute deadline. Shared CI runners (like
 GitHub-hosted macOS runners) are slower and less predictable, and can blow that
 deadline mid-reconfigure with `context deadline exceeded` errors. Raise it with the
@@ -474,6 +475,8 @@ Turning services off is fine for most development, UI automation, and CI, but so
 - Recents in the Files app and the document picker shows "Content Unavailable" without `searchd` (`search`).
 - Push notifications need `apsd`, StoreKit testing needs `storekitd` (`store`).
 - Universal links need `swcd` (`web`).
+- Declarative device management, and MDM or configuration-profile workflows that use it, need `mdm`.
+- App Clips need `clipserviced`, and accessibility asset downloads such as VoiceOver voices need `axassetsd` (`other`).
 - The Contacts, Photos, and Calendar pickers can act up without their categories.
 
 `simslim profiles` lists every category, so you can keep a category with `--except` or individual daemons with `--keep`.

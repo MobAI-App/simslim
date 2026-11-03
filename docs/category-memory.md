@@ -32,7 +32,8 @@ category run's median minus that baseline, rounded to a useful GUI value.
 | Messaging & FaceTime | 60.2 MiB | 60 MB |
 | Sharing & Device Connectivity | 64.4 MiB | 65 MB |
 | Ads, Diagnostics & Telemetry | 106.0 MiB | 105 MB |
-| Other Background Services | 194.0 MiB | 195 MB |
+| Device Management | 12.0 MiB | 10 MB |
+| Other Background Services | 222.9 MiB | 225 MB |
 
 These deltas are not additive. Services share caches and dependencies, and
 their footprint changes with simulator runtime, boot age, installed apps, and
@@ -44,3 +45,10 @@ remaining 11 daemons after the same 20-second settle. Their median deltas were
 64.4, 46.4, and 73.4 MiB; the median pair gives the 65 MB GUI estimate. Seven of
 those daemons stayed resident at idle and directly totaled about 76.2 MiB. The
 whole-simulator delta is used above for consistency with the other categories.
+
+Device Management was added, and Other Background Services gained
+`accessibility.axassetsd` and `ClipServices.clipserviced`, later. Both were
+measured on an iPhone 17 Pro / iOS 26.5 in three clean-boot rounds, taking the
+median of three samples after a 20-second settle, against a fully slim baseline
+of 847.3 MiB from the same rounds. Before the change, the same rounds measured a
+fully slim simulator at 904.3 MiB.
