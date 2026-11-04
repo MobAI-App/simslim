@@ -3,6 +3,7 @@ package simslim
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -171,9 +172,15 @@ func newBatchFake(t *testing.T, runtime string, labels []string, withoutPlist st
 			writeJobPlist(t, filepath.Join(root, "System/Library/LaunchDaemons", l+".plist"), l)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "xcrun"), []byte(fakeBatchXcrun), 0o755); err != nil {
+	xcrun := filepath.Join(dir, "xcrun")
+	if err := os.WriteFile(xcrun, []byte(fakeBatchXcrun), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// macOS vets a new executable on its first exec, which can take most of a
+	// second; run it once so a short SpawnTimeout times the fake, not that check.
+	warm := exec.Command(xcrun)
+	warm.Env = append(os.Environ(), "FAKE_LOG="+os.DevNull)
+	_ = warm.Run()
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("FAKE_LOG", f.log)
 	t.Setenv("FAKE_DIS", f.dis)
