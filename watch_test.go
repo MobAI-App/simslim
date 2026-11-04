@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -335,42 +336,6 @@ func TestPreslimDeviceLeavesOtherDevicesAlone(t *testing.T) {
 	}
 }
 
-// TestPollDeviceDirsReportsNewDevice verifies a device created after the poll
-// starts is reported with its set, and the devices already there are not.
-func TestPollDeviceDirsReportsNewDevice(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "OLD"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	created := make(chan deviceDir, 4)
-	done := make(chan struct{})
-	go func() {
-		pollDeviceDirs(ctx, map[string]string{dir: "default", filepath.Join(dir, "missing"): "testing"}, time.Millisecond, func(d deviceDir) { created <- d })
-		close(done)
-	}()
-
-	select {
-	case d := <-created:
-		t.Fatalf("an existing device was reported: %v", d)
-	case <-time.After(20 * time.Millisecond):
-	}
-	if err := os.Mkdir(filepath.Join(dir, "NEW"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case d := <-created:
-		if want := (deviceDir{path: filepath.Join(dir, "NEW"), set: "default"}); d != want {
-			t.Fatalf("reported %v, want %v", d, want)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("a new device was not reported")
-	}
-	cancel()
-	<-done
-}
-
 const newDevicePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -413,5 +378,21 @@ func TestSeedNewReadsDevicePlist(t *testing.T) {
 	want := Device{UDID: "CCCC", State: "Shutdown", Platform: "iOS", OSVersion: "26.5", Set: "default", DataPath: filepath.Join(dir, "data"), RuntimeID: "com.apple.CoreSimulator.SimRuntime.iOS-26-5"}
 	if len(seeds) != 1 || seeds[0] != want {
 		t.Fatalf("seeded %+v, want [%+v]", seeds, want)
+	}
+}
+
+// TestWatcherPruneDropsDeletedDevices verifies a deleted device, such as a
+// finished parallel-testing clone, leaves neither seen nor seeded.
+func TestWatcherPruneDropsDeletedDevices(t *testing.T) {
+	w := &watcher{
+		seen:   map[string]bool{"KEEP": true, "GONE": true},
+		seeded: map[string]bool{"KEEP2": true, "GONE2": true},
+	}
+	w.prune([]Device{{UDID: "KEEP"}, {UDID: "KEEP2"}})
+	if want := map[string]bool{"KEEP": true}; !reflect.DeepEqual(w.seen, want) {
+		t.Fatalf("seen = %v, want %v", w.seen, want)
+	}
+	if want := map[string]bool{"KEEP2": true}; !reflect.DeepEqual(w.seeded, want) {
+		t.Fatalf("seeded = %v, want %v", w.seeded, want)
 	}
 }

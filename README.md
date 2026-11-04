@@ -330,14 +330,19 @@ simulator that is shut down, on a runtime that persists overrides (iOS/tvOS
 18.5, watchOS 11.5, visionOS 2.5 or newer), is slimmed before it boots: watch
 writes the profile's disable overrides into its launchd store, so its next boot
 starts none of those daemons. That includes a simulator's very first boot:
-watch lists the device-set directories every 50ms and seeds a new device from
-its own `device.plist`, without waiting for `simctl list`. A boot that starts
-before the seed lands is slimmed as it boots instead, and comes up slim from its
-next boot; a script that boots right after `simctl create` can wait for
-`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<UDID>/disabled.plist` to appear
-first.
+watch follows the device-set directories with kqueue and seeds a new device from
+its own `device.plist` within milliseconds of `simctl create`, without waiting
+for `simctl list`. A boot that starts before the seed lands is slimmed as it
+boots instead, and comes up slim from its next boot. A script that creates and
+boots a simulator should not race watch: run
+`simslim on <udid> --preserve-boot-state` between `simctl create` and the boot,
+which slims the device and leaves it shut down.
 Watch only ever adds disables there, as it does after boot: a service disabled
 beyond the profile stays disabled until `simslim off`.
+
+This changes what watch does on startup: it now writes the slim profile into
+every shut-down simulator in the watched sets, not only the ones that boot while
+it runs. Run `simslim off <udid>` to bring one back to stock.
 
 Every simulator is also slimmed no-reboot the moment it boots, which reads the
 device back and covers whatever booted before watch could seed it. That is the

@@ -16,12 +16,6 @@ import (
 // DefaultWatchInterval is how often Watch rescans the device sets.
 const DefaultWatchInterval = 3 * time.Second
 
-// deviceDirPollInterval is how often Watch lists the device-set directories for
-// a newly created simulator. Listing a directory is one cheap syscall, while a
-// `simctl list` takes seconds on a loaded host, so only the listing can catch a
-// device between `simctl create` and an immediate boot.
-const deviceDirPollInterval = 50 * time.Millisecond
-
 // newDevicePlistWait bounds how long Watch waits for a new device directory's
 // device.plist, which `simctl create` writes just after the directory.
 const newDevicePlistWait = 2 * time.Second
@@ -39,8 +33,8 @@ type preslimStrategy func(d Device, p Profile) (int, error)
 // A shut-down simulator on a runtime that persists overrides is slimmed before
 // it boots: Watch writes the profile's disable overrides into its launchd store,
 // so its next boot, its very first included, starts none of those daemons. New
-// devices are caught within deviceDirPollInterval of their creation, ahead of a
-// tool that creates and boots at once. Every simulator is still slimmed no-reboot
+// devices are caught by a kqueue watch on the device-set directories, ahead of
+// a tool that creates and boots at once. Every simulator is still slimmed no-reboot
 // as it boots: that reads the device back, and it is the only hook for a device
 // that booted before its store was seeded, on an older runtime, or as an
 // xcodebuild parallel-testing clone (cloned stock, since overrides do not
@@ -65,12 +59,18 @@ func watch(ctx context.Context, p Profile, interval time.Duration, report Report
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
-		pollDeviceDirs(ctx, deviceSetDirs(), deviceDirPollInterval, func(dir deviceDir) {
-			w.seedNew(ctx, dir)
-			select {
-			case created <- struct{}{}:
-			default: // a scan is already due
-			}
+		watchDeviceDirs(ctx, deviceSetDirs(), interval, func(dir deviceDir) {
+			// seedNew waits for device.plist, so each new device gets its own
+			// goroutine: a batch of parallel-testing clones seeds at once.
+			w.wg.Add(1)
+			go func() {
+				defer w.wg.Done()
+				w.seedNew(ctx, dir)
+				select {
+				case created <- struct{}{}:
+				default: // a scan is already due
+				}
+			}()
 		})
 	}()
 	ticker := time.NewTicker(interval)
@@ -135,39 +135,6 @@ func deviceSetDirs() map[string]string {
 		}
 	}
 	return dirs
-}
-
-// pollDeviceDirs calls created for each directory that appears in one of
-// setDirs, until ctx is cancelled. A set directory that does not exist yet is
-// simply empty.
-func pollDeviceDirs(ctx context.Context, setDirs map[string]string, interval time.Duration, created func(deviceDir)) {
-	known := map[string]bool{}
-	list := func() (fresh []deviceDir) {
-		for dir, set := range setDirs {
-			entries, _ := os.ReadDir(dir)
-			for _, e := range entries {
-				path := filepath.Join(dir, e.Name())
-				if e.IsDir() && !known[path] {
-					known[path] = true
-					fresh = append(fresh, deviceDir{path: path, set: set})
-				}
-			}
-		}
-		return fresh
-	}
-	list() // devices that already exist are the first scan's business
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		for _, dir := range list() {
-			created(dir)
-		}
-	}
 }
 
 // readDevicePlist reads the device CoreSimulator describes in a device
@@ -239,7 +206,7 @@ func (w *watcher) seedNew(ctx context.Context, dir deviceDir) {
 
 // watcher holds the UDIDs already slimmed or in flight, and in seeded the
 // shut-down UDIDs whose store already holds the profile. The scan loop, the
-// slim goroutines and the directory poll all touch them, so mu guards both.
+// slim goroutines and the seed goroutines all touch them, so mu guards both.
 type watcher struct {
 	p       Profile
 	report  Reporter
@@ -258,6 +225,7 @@ func (w *watcher) scan(ctx context.Context) {
 		return
 	}
 	sort.Slice(devices, func(i, j int) bool { return devices[i].UDID < devices[j].UDID })
+	w.prune(devices)
 	for _, d := range devices {
 		if d.State != "Booted" {
 			// On iOS below 18.5 the no-reboot slim dies with the boot session,
@@ -332,6 +300,28 @@ func (w *watcher) claim(udid string) bool {
 	}
 	w.seen[udid] = true
 	return true
+}
+
+// prune drops the UDIDs of deleted devices, such as finished parallel-testing
+// clones, so seen and seeded do not grow by one entry per clone. A device
+// created after the listing started is only seeded again, which is a no-op.
+func (w *watcher) prune(devices []Device) {
+	listed := make(map[string]bool, len(devices))
+	for _, d := range devices {
+		listed[d.UDID] = true
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for udid := range w.seen {
+		if !listed[udid] {
+			delete(w.seen, udid)
+		}
+	}
+	for udid := range w.seeded {
+		if !listed[udid] {
+			delete(w.seeded, udid)
+		}
+	}
 }
 
 func (w *watcher) forget(udid string) {
