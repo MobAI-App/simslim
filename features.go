@@ -53,6 +53,8 @@ var Features = []Feature{
 	{ID: "news", Name: "News", Labels: []string{"com.apple.newsd"}},
 	{ID: "game-center", Name: "Game Center", Labels: []string{"com.apple.gamed"}},
 	{ID: "find-my", Name: "Find My", Labels: []string{"com.apple.findmy.findmylocated"}},
+	{ID: "mdm", Name: "Declarative device management", Labels: []string{"com.apple.remotemanagementd", "com.apple.RemoteManagementAgent"}},
+	{ID: "app-clips", Name: "App Clips", Labels: []string{"com.apple.ClipServices.clipserviced"}},
 	{ID: "screen-time", Name: "Screen Time", Labels: []string{"com.apple.ScreenTimeAgent"}},
 }
 

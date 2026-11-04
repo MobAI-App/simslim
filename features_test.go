@@ -90,6 +90,20 @@ func TestFilesRecentsDiagnoseDisabledSearchd(t *testing.T) {
 	}
 }
 
+func TestSlimProfileReportsMDMAndAppClipsUntilExcepted(t *testing.T) {
+	features, err := ResolveFeatures([]string{"mdm", "app-clips"})
+	if err != nil {
+		t.Fatalf("ResolveFeatures(mdm, app-clips) error = %v", err)
+	}
+	if report := DiagnoseFeatures(features, (Profile{}).Desired()); report.OK {
+		t.Errorf("a full slim profile must break MDM and App Clips: %+v", report)
+	}
+	kept := Profile{ExceptCategories: map[string]bool{"mdm": true, "other": true}}
+	if report := DiagnoseFeatures(features, kept.Desired()); !report.OK {
+		t.Errorf("--except mdm,other must keep MDM and App Clips: %+v", report)
+	}
+}
+
 func TestDiagnoseFeatures(t *testing.T) {
 	features, err := ResolveFeatures([]string{"push", "storekit", "universal-links"})
 	if err != nil {
