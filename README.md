@@ -70,7 +70,8 @@ Use it in CI with [mobai-ci](https://github.com/MobAI-App/mobai-ci).
 The SwiftUI app bundles the CLI and adds:
 
 - Searchable simulator status, disk-size, and live RAM columns.
-- Searchable service profiles with per-daemon controls and purpose summaries.
+- Searchable service profiles with per-daemon controls and purpose summaries,
+  exportable as a [profile file](#profile-files).
 - Read-only disk analysis plus confirmed cleanup of allowlisted data.
 - Clone, rename, erase, delete, and Finder shortcuts.
 
@@ -208,6 +209,9 @@ To build one interactively, run `simslim profile ci.json`: name it, then use the
 arrow keys and space to tick whole features to keep enabled, or press `→` to open
 a feature and keep individual daemons within it. Point it at a directory to save
 `<name>.json` there, or omit the path to print to stdout.
+
+In the macOS app, pick the services to keep and click **Export…** to save the
+same selection as a profile file.
 
 ### Checking a simulator with doctor
 

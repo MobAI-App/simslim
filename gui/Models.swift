@@ -62,6 +62,12 @@ struct AlwaysEnabledService: Decodable, Identifiable, Equatable {
   var id: String { label }
 }
 
+/// A profile file for `simslim on --profile`; mirrors SlimProfile in profile_file.go.
+struct SlimProfileFile: Encodable {
+  let except: [String]?
+  let keep: [String]?
+}
+
 struct SimulatorMeasurement: Decodable, Equatable {
   let processes: Int
   let bytes: Int64
