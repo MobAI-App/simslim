@@ -40,7 +40,7 @@ struct ContentView: View {
   var body: some View {
     NavigationSplitView {
       ProfileSidebar(mode: $slimmingMode)
-        .navigationSplitViewColumnWidth(min: 340, ideal: 390, max: 460)
+        .navigationSplitViewColumnWidth(min: 300, ideal: 390, max: 460)
     } detail: {
       VStack(spacing: 0) {
         header
@@ -349,15 +349,15 @@ struct ContentView: View {
 
   private var tableHeader: some View {
     HStack(spacing: 12) {
-      Color.clear.frame(width: 30, height: 1)
+      Color.clear.frame(width: TableColumn.selection, height: 1)
       Text("SIMULATOR")
-        .frame(minWidth: 255, maxWidth: .infinity, alignment: .leading)
-      Text("RUNTIME").frame(width: 74, alignment: .leading)
-      Text("BOOT").frame(width: 86, alignment: .leading)
-      Text("SERVICES").frame(width: 150, alignment: .leading)
-      Text("DISK SIZE").frame(width: 105, alignment: .leading)
-      Text("RAM USAGE").frame(width: 82, alignment: .leading)
-      Color.clear.frame(width: 28, height: 1)
+        .frame(minWidth: TableColumn.simulatorMin, maxWidth: .infinity, alignment: .leading)
+      Text("RUNTIME").frame(width: TableColumn.runtime, alignment: .leading)
+      Text("BOOT").frame(width: TableColumn.boot, alignment: .leading)
+      Text("SERVICES").frame(width: TableColumn.services, alignment: .leading)
+      Text("DISK SIZE").frame(width: TableColumn.disk, alignment: .leading)
+      Text("RAM USAGE").frame(width: TableColumn.ram, alignment: .leading)
+      Color.clear.frame(width: TableColumn.trailing, height: 1)
     }
     .font(.system(size: 10, weight: .semibold))
     .foregroundStyle(.secondary)
@@ -441,6 +441,20 @@ struct ContentView: View {
       managementSheet = sheet
     }
   }
+}
+
+/// Shared column metrics for the simulator table. `tableHeader` and `SimulatorRow`
+/// must read the same widths or the header labels stop lining up with their values.
+private enum TableColumn {
+  static let selection: CGFloat = 30
+  /// Flexible: takes every spare point, so this is a floor, not a fixed width.
+  static let simulatorMin: CGFloat = 140
+  static let runtime: CGFloat = 70
+  static let boot: CGFloat = 80
+  static let services: CGFloat = 130
+  static let disk: CGFloat = 88
+  static let ram: CGFloat = 74
+  static let trailing: CGFloat = 28
 }
 
 private struct ToolbarActionLabel: View {
@@ -1256,7 +1270,7 @@ private struct SimulatorRow: View {
           Image(systemName: isSelected ? "checkmark.square.fill" : "square")
             .font(.title3)
             .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-            .frame(width: 30, height: 30)
+            .frame(width: TableColumn.selection, height: TableColumn.selection)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1273,6 +1287,9 @@ private struct SimulatorRow: View {
           VStack(alignment: .leading, spacing: 2) {
             Text(device.name)
               .font(.subheadline.weight(.semibold))
+              .lineLimit(1)
+              .truncationMode(.tail)
+              .help(device.name)
             HStack(spacing: 5) {
               Text(device.udid)
                 .font(.system(size: 9, design: .monospaced))
@@ -1295,26 +1312,29 @@ private struct SimulatorRow: View {
             }
           }
         }
-        .frame(minWidth: 255, maxWidth: .infinity, alignment: .leading)
+        .frame(minWidth: TableColumn.simulatorMin, maxWidth: .infinity, alignment: .leading)
 
         Text(device.runtimeName)
           .font(.subheadline)
-          .frame(width: 74, alignment: .leading)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .help(device.runtimeName)
+          .frame(width: TableColumn.runtime, alignment: .leading)
 
         BootStateView(isBooted: device.isBooted)
-          .frame(width: 86, alignment: .leading)
+          .frame(width: TableColumn.boot, alignment: .leading)
 
         ServiceStateView(
           state: model.slimState(for: device),
           isCached: model.stateIsCached(for: device),
           operation: operation
         )
-        .frame(width: 150, alignment: .leading)
+        .frame(width: TableColumn.services, alignment: .leading)
 
         Text(model.diskSizeText(for: device))
           .font(.subheadline.monospacedDigit())
           .foregroundStyle(model.diskSizes[device.udid] == nil ? .tertiary : .secondary)
-          .frame(width: 105, alignment: .leading)
+          .frame(width: TableColumn.disk, alignment: .leading)
           .help("Current allocated size of this simulator on disk")
 
         Group {
@@ -1326,7 +1346,7 @@ private struct SimulatorRow: View {
               .foregroundStyle(.tertiary)
           }
         }
-        .frame(width: 82, alignment: .leading)
+        .frame(width: TableColumn.ram, alignment: .leading)
 
         Menu {
           Section("Power") {
@@ -1441,7 +1461,7 @@ private struct SimulatorRow: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(model.isBusy(device))
-        .frame(width: 28)
+        .frame(width: TableColumn.trailing)
       }
 
       if let operation {
