@@ -75,6 +75,7 @@ func newApp() *cli.Command {
 			&cli.StringFlag{Name: "save", Usage: "also remove the services from this profile file, creating it if needed"},
 		}, Action: cmdDisable},
 		{Name: "watch", Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "json", Usage: "print one JSON object per event on stdout (slimming, slimmed, failed, stopped, slimmed_before_boot) instead of log lines"},
 			&cli.StringFlag{Name: "profile", Usage: "apply a JSON profile file (mutually exclusive with --except/--keep)"},
 			&cli.StringFlag{Name: "except", Usage: "comma-separated category IDs to leave fully enabled (see `simslim profiles`)"},
 			&cli.StringFlag{Name: "keep", Usage: "comma-separated launchd labels to keep running"},

@@ -43,14 +43,40 @@ type preslimStrategy func(d Device, p Profile) (int, error)
 // each booted device in its own goroutine so one slow reconfigure does not delay
 // catching the next clone, and returns once those goroutines are done.
 func Watch(ctx context.Context, p Profile, interval time.Duration, report Reporter) error {
-	return watch(ctx, p, interval, report, EnableSlimNoReboot)
+	return WatchWithEvents(ctx, p, interval, report, nil)
 }
 
-func watch(ctx context.Context, p Profile, interval time.Duration, report Reporter, slim slimStrategy) error {
+// The WatchEvent kinds. A wrapper that boots a device and then changes its
+// services waits for WatchSlimmed (or WatchFailed): after it, the watcher does
+// not touch that device again until the device shuts down.
+const (
+	WatchSlimming          = "slimming"            // an after-boot pass started
+	WatchSlimmed           = "slimmed"             // the pass for the current boot finished
+	WatchFailed            = "failed"              // the pass failed; the next scan retries it
+	WatchStopped           = "stopped"             // the device shut down, so its pass was cancelled
+	WatchSlimmedBeforeBoot = "slimmed_before_boot" // disables were written into a shut-down device's store
+)
+
+// WatchEvent is the stable, machine-readable form of a watcher log line.
+type WatchEvent struct {
+	Event    string `json:"event"`
+	UDID     string `json:"udid"`
+	Set      string `json:"set"`
+	Services int    `json:"services,omitempty"` // disables written, for slimmed_before_boot
+	Error    string `json:"error,omitempty"`    // for failed
+}
+
+// WatchWithEvents is Watch that also hands every WatchEvent to events, which
+// may be called from several goroutines at once. A nil events behaves as Watch.
+func WatchWithEvents(ctx context.Context, p Profile, interval time.Duration, report Reporter, events func(WatchEvent)) error {
+	return watch(ctx, p, interval, report, events, EnableSlimNoReboot)
+}
+
+func watch(ctx context.Context, p Profile, interval time.Duration, report Reporter, events func(WatchEvent), slim slimStrategy) error {
 	if interval <= 0 {
 		interval = DefaultWatchInterval
 	}
-	w := &watcher{p: p, report: report, slim: slim, preslim: preslimDevice, seen: map[string]bool{}, seeded: map[string]bool{}}
+	w := &watcher{p: p, report: report, events: events, slim: slim, preslim: preslimDevice, passes: map[string]*slimPass{}, seeded: map[string]bool{}}
 	// The CLI exits right after this returns, but an importer keeps running, so
 	// no slim may outlive the call. A cancelled ctx aborts an in-flight slim
 	// inside its next simctl call, which keeps the wait short.
@@ -204,18 +230,32 @@ func (w *watcher) seedNew(ctx context.Context, dir deviceDir) {
 	w.seed(d)
 }
 
-// watcher holds the UDIDs already slimmed or in flight, and in seeded the
-// shut-down UDIDs whose store already holds the profile. The scan loop, the
-// slim goroutines and the seed goroutines all touch them, so mu guards both.
+// watcher holds in passes the booted UDIDs already slimmed or in flight, and in
+// seeded the shut-down UDIDs whose store already holds the profile. The scan
+// loop, the slim goroutines and the seed goroutines all touch them, so mu
+// guards both.
 type watcher struct {
 	p       Profile
 	report  Reporter
+	events  func(WatchEvent)
 	slim    slimStrategy
 	preslim preslimStrategy
 	wg      sync.WaitGroup
 	mu      sync.Mutex
-	seen    map[string]bool
+	passes  map[string]*slimPass
 	seeded  map[string]bool
+}
+
+// slimPass is one boot's after-boot slim. Its cancel stops it once that boot
+// ends, so it cannot keep retrying into the device's next boot.
+type slimPass struct {
+	cancel context.CancelFunc
+}
+
+func (w *watcher) emit(e WatchEvent) {
+	if w.events != nil {
+		w.events(e)
+	}
 }
 
 func (w *watcher) scan(ctx context.Context) {
@@ -240,22 +280,18 @@ func (w *watcher) scan(ctx context.Context) {
 		w.mu.Lock()
 		delete(w.seeded, d.UDID)
 		w.mu.Unlock()
-		if !w.claim(d.UDID) {
+		pctx, pass := w.claim(ctx, d.UDID)
+		if pass == nil {
 			continue
 		}
 		w.wg.Add(1)
 		go func(d Device) {
 			defer w.wg.Done()
+			defer pass.cancel()
 			w.report.report(fmt.Sprintf("watch: slimming %s (set %s)", d.UDID, d.Set))
-			if _, err := w.slim(ctx, d.Set, d.UDID, w.p, prefixed(w.report, d.UDID)); err != nil {
-				w.report.report(fmt.Sprintf("watch: %s: %v", d.UDID, err))
-				// A transient launchctl failure would otherwise leave this clone
-				// stock for the whole test run. The next scan retries it, and a
-				// torn-down clone drops out of simctl list, so this does not loop.
-				w.forget(d.UDID)
-				return
-			}
-			w.report.report(fmt.Sprintf("watch: slimmed %s", d.UDID))
+			w.emit(WatchEvent{Event: WatchSlimming, UDID: d.UDID, Set: d.Set})
+			_, err := w.slim(pctx, d.Set, d.UDID, w.p, prefixed(w.report, d.UDID))
+			w.finish(d, pass, err)
 		}(d)
 	}
 }
@@ -288,22 +324,47 @@ func (w *watcher) seed(d Device) {
 		return
 	}
 	w.report.report(fmt.Sprintf("watch: slimmed %s before boot (%d services disabled, set %s)", d.UDID, n, d.Set))
+	w.emit(WatchEvent{Event: WatchSlimmedBeforeBoot, UDID: d.UDID, Set: d.Set, Services: n})
 }
 
-// claim reserves a UDID for this scan, reporting false when it is already
-// slimmed or in flight.
-func (w *watcher) claim(udid string) bool {
+// finish reports a pass's outcome. It holds mu so a superseded pass, whose boot
+// ended, can never announce slimmed after a newer boot's pass has started.
+func (w *watcher) finish(d Device, pass *slimPass, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.seen[udid] {
-		return false
+	switch {
+	case w.passes[d.UDID] != pass:
+		w.report.report(fmt.Sprintf("watch: %s shut down; stopped its slim", d.UDID))
+		w.emit(WatchEvent{Event: WatchStopped, UDID: d.UDID, Set: d.Set})
+	case err != nil:
+		// A transient launchctl failure would otherwise leave this clone stock
+		// for the whole test run. The next scan retries it, and a torn-down
+		// clone drops out of simctl list, so this does not loop.
+		delete(w.passes, d.UDID)
+		w.report.report(fmt.Sprintf("watch: %s: %v", d.UDID, err))
+		w.emit(WatchEvent{Event: WatchFailed, UDID: d.UDID, Set: d.Set, Error: err.Error()})
+	default:
+		w.report.report(fmt.Sprintf("watch: slimmed %s", d.UDID))
+		w.emit(WatchEvent{Event: WatchSlimmed, UDID: d.UDID, Set: d.Set})
 	}
-	w.seen[udid] = true
-	return true
+}
+
+// claim starts a pass for a booted UDID, returning a nil pass when one is
+// already done or in flight for this boot.
+func (w *watcher) claim(ctx context.Context, udid string) (context.Context, *slimPass) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.passes[udid] != nil {
+		return nil, nil
+	}
+	pctx, cancel := context.WithCancel(ctx)
+	pass := &slimPass{cancel: cancel}
+	w.passes[udid] = pass
+	return pctx, pass
 }
 
 // prune drops the UDIDs of deleted devices, such as finished parallel-testing
-// clones, so seen and seeded do not grow by one entry per clone. A device
+// clones, so passes and seeded do not grow by one entry per clone. A device
 // created after the listing started is only seeded again, which is a no-op.
 func (w *watcher) prune(devices []Device) {
 	listed := make(map[string]bool, len(devices))
@@ -312,9 +373,10 @@ func (w *watcher) prune(devices []Device) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for udid := range w.seen {
+	for udid, pass := range w.passes {
 		if !listed[udid] {
-			delete(w.seen, udid)
+			pass.cancel()
+			delete(w.passes, udid)
 		}
 	}
 	for udid := range w.seeded {
@@ -324,9 +386,14 @@ func (w *watcher) prune(devices []Device) {
 	}
 }
 
+// forget ends a device's boot: its pass, if still running, is cancelled, and
+// its next boot gets a pass of its own.
 func (w *watcher) forget(udid string) {
 	w.mu.Lock()
-	delete(w.seen, udid)
+	if pass := w.passes[udid]; pass != nil {
+		pass.cancel()
+		delete(w.passes, udid)
+	}
 	w.mu.Unlock()
 }
 

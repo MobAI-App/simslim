@@ -117,6 +117,10 @@ missing) seeds a new device from its `device.plist` in its own goroutine
 (`seedNew`), since a `simctl list` on a loaded host takes longer than a script
 waits between `simctl create` and boot. A boot that starts first is logged and
 caught by the no-reboot slim at boot, which stays as the read-back and fallback.
+Each boot's after-boot pass has its own cancel (`slimPass`), called when the
+device shuts down or is deleted, so a pass never retries into the next boot; a
+superseded pass reports `stopped`, never `slimmed`. `WatchWithEvents` emits
+`WatchEvent`s, which `watch --json` prints one per line as a stable contract.
 
 **Live enable/disable.** `live.go` holds `EnableServices`/`DisableServices`
 (`simslim enable`/`disable`), which act on a booted simulator only and keep no

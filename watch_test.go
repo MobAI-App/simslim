@@ -49,7 +49,7 @@ exit 0
 }
 
 func newTestWatcher(slim slimStrategy, report Reporter) *watcher {
-	return &watcher{report: report, slim: slim, seen: map[string]bool{}, seeded: map[string]bool{}}
+	return &watcher{report: report, slim: slim, passes: map[string]*slimPass{}, seeded: map[string]bool{}}
 }
 
 // TestWatchSlimsEachBootedDeviceOnce verifies the scan slims a booted device
@@ -189,7 +189,7 @@ func TestWatchWaitsForInFlightSlims(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	returned := make(chan error, 1)
-	go func() { returned <- watch(ctx, Profile{}, time.Millisecond, nil, fake) }()
+	go func() { returned <- watch(ctx, Profile{}, time.Millisecond, nil, nil, fake) }()
 
 	<-started
 	cancel()
@@ -382,17 +382,132 @@ func TestSeedNewReadsDevicePlist(t *testing.T) {
 }
 
 // TestWatcherPruneDropsDeletedDevices verifies a deleted device, such as a
-// finished parallel-testing clone, leaves neither seen nor seeded.
+// finished parallel-testing clone, leaves neither a pass nor seeded, and
+// cancels a pass still running for it.
 func TestWatcherPruneDropsDeletedDevices(t *testing.T) {
+	gone, cancelGone := context.WithCancel(context.Background())
+	keep := &slimPass{cancel: func() {}}
 	w := &watcher{
-		seen:   map[string]bool{"KEEP": true, "GONE": true},
+		passes: map[string]*slimPass{"KEEP": keep, "GONE": {cancel: cancelGone}},
 		seeded: map[string]bool{"KEEP2": true, "GONE2": true},
 	}
 	w.prune([]Device{{UDID: "KEEP"}, {UDID: "KEEP2"}})
-	if want := map[string]bool{"KEEP": true}; !reflect.DeepEqual(w.seen, want) {
-		t.Fatalf("seen = %v, want %v", w.seen, want)
+	if want := map[string]*slimPass{"KEEP": keep}; !reflect.DeepEqual(w.passes, want) {
+		t.Fatalf("passes = %v, want %v", w.passes, want)
+	}
+	if gone.Err() == nil {
+		t.Fatal("a deleted device's pass was not cancelled")
 	}
 	if want := map[string]bool{"KEEP2": true}; !reflect.DeepEqual(w.seeded, want) {
 		t.Fatalf("seeded = %v, want %v", w.seeded, want)
+	}
+}
+
+// eventLog collects watcher events; the watcher calls it from several goroutines.
+type eventLog struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (l *eventLog) add(e WatchEvent) {
+	l.mu.Lock()
+	l.events = append(l.events, e.Event+" "+e.UDID)
+	l.mu.Unlock()
+}
+
+func (l *eventLog) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.events)
+}
+
+// TestWatchCancelsPassWhenDeviceShutsDown covers a device shut down mid-pass and
+// booted again: the old pass must stop instead of retrying into the new boot,
+// where it would disable services a wrapper enabled after the new pass.
+func TestWatchCancelsPassWhenDeviceShutsDown(t *testing.T) {
+	rewrite := fakeDeviceList(t, bootedClone)
+
+	started := make(chan struct{})
+	var mu sync.Mutex
+	calls := 0
+	fake := func(ctx context.Context, _, _ string, _ Profile, _ Reporter) (bool, error) {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-ctx.Done() // a slow first pass, like one retrying launchctl
+			return false, ctx.Err()
+		}
+		return true, nil
+	}
+
+	var log eventLog
+	w := newTestWatcher(fake, nil)
+	w.events = log.add
+	w.scan(context.Background())
+	<-started
+	rewrite(shutdownClone)
+	w.scan(context.Background())
+	w.wg.Wait() // returns only because the shutdown cancelled the first pass
+	rewrite(bootedClone)
+	w.scan(context.Background())
+	w.wg.Wait()
+
+	want := []string{"slimming AAAA", "stopped AAAA", "slimming AAAA", "slimmed AAAA"}
+	if got := log.list(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %q, want %q", got, want)
+	}
+}
+
+// TestWatchStalePassKeepsNewBootClaimed verifies a pass that outlived its boot
+// and then fails neither reports failed nor drops the newer boot's claim, which
+// would start a third pass on a device the newer pass already slimmed.
+func TestWatchStalePassKeepsNewBootClaimed(t *testing.T) {
+	rewrite := fakeDeviceList(t, bootedClone)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	calls := 0
+	fake := func(_ context.Context, _, _ string, _ Profile, _ Reporter) (bool, error) {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-release // ignores its cancel until a spawn returns
+			return false, errors.New("launchctl disable failed")
+		}
+		return true, nil
+	}
+
+	var log eventLog
+	w := newTestWatcher(fake, nil)
+	w.events = log.add
+	w.scan(context.Background())
+	<-started
+	rewrite(shutdownClone)
+	w.scan(context.Background())
+	rewrite(bootedClone)
+	w.scan(context.Background())
+	for !slices.Contains(log.list(), "slimmed AAAA") {
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+	w.wg.Wait()
+	w.scan(context.Background())
+	w.wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("slim ran %d times, want 2 (one per boot)", calls)
+	}
+	want := []string{"slimming AAAA", "slimming AAAA", "slimmed AAAA", "stopped AAAA"}
+	if got := log.list(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %q, want %q", got, want)
 	}
 }

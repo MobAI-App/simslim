@@ -364,6 +364,22 @@ It takes the same `--profile`/`--except`/`--keep` selection as `on`, and scans
 the default and `testing` sets plus any passed with `--set`. Point `--set` at a
 custom parallel-testing device set if your Xcode uses one. It runs until Ctrl-C.
 
+A wrapper that turns services on per run with `simslim enable` should wait for
+watch to finish with the boot first, or watch may switch them off again.
+`simslim watch --json` prints one JSON object per line on stdout, a stable
+interface unlike the log lines:
+
+```json
+{"event":"slimmed","udid":"…","set":"default"}
+```
+
+`event` is `slimming` (a boot's pass started), `slimmed` (it finished; watch
+leaves the device alone until it shuts down), `failed` (with `error`; the next
+scan retries), `stopped` (the device shut down mid-pass, so the pass was
+cancelled), or `slimmed_before_boot` (with `services`, the disables written into
+a shut-down device's store). Boot the device, wait for its `slimmed` (or
+`failed`), then call `enable`.
+
 ## Disk cleanup
 
 Disk cleanup is permanent and separate from service slimming. `disk-plan` is
