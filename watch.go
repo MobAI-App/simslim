@@ -303,6 +303,10 @@ func (w *watcher) seed(d Device) {
 	if w.preslim == nil {
 		return
 	}
+	// A device caught Shutting Down or Booting is seeded once it reads Shutdown.
+	if d.State != "Shutdown" {
+		return
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock() // serializes the store writes of seedNew and scan
 	if w.seeded[d.UDID] {

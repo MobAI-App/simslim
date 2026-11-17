@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -509,5 +510,32 @@ func TestWatchStalePassKeepsNewBootClaimed(t *testing.T) {
 	want := []string{"slimming AAAA", "slimming AAAA", "slimmed AAAA", "stopped AAAA"}
 	if got := log.list(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %q, want %q", got, want)
+	}
+}
+
+// TestWatchSeedsDeviceScannedMidShutdown covers a scan that lands while
+// `simctl shutdown` is still running: the device is not seeded yet, so the next
+// scan, which sees it Shutdown, must seed it instead of skipping it.
+func TestWatchSeedsDeviceScannedMidShutdown(t *testing.T) {
+	rewrite := fakeDeviceList(t, strings.Replace(shutdownClone, `"Shutdown"`, `"Shutting Down"`, 1))
+
+	var mu sync.Mutex
+	var states []string
+	w := newTestWatcher(nil, nil)
+	w.preslim = func(d Device, _ Profile) (int, error) {
+		mu.Lock()
+		states = append(states, d.State)
+		mu.Unlock()
+		return 1, nil
+	}
+	w.scan(context.Background())
+	rewrite(shutdownClone)
+	w.scan(context.Background())
+	w.scan(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []string{"Shutdown"}; !reflect.DeepEqual(states, want) {
+		t.Fatalf("seeded in states %q, want %q (once, after the shutdown finished)", states, want)
 	}
 }
