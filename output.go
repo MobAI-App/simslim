@@ -48,6 +48,14 @@ type SimulatorMutationOutput struct {
 	SourceUDID string `json:"sourceUdid,omitempty"`
 }
 
+// ScreenshotOutput is returned by `screenshot`: the PNG path written for a
+// booted simulator, so the GUI can render its live screen in the device grid.
+type ScreenshotOutput struct {
+	UDID string `json:"udid"`
+	Name string `json:"name,omitempty"`
+	Path string `json:"path"`
+}
+
 // DoctorOutput reports whether each required feature survives the device's
 // current slimming. OK is false when any required feature has a disabled daemon.
 type DoctorOutput struct {

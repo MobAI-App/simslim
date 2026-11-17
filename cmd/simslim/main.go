@@ -744,6 +744,51 @@ func cmdShutdown(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+// cmdScreenshot captures a booted simulator's screen as a PNG and, under
+// --json, reports the path so the GUI can render it in the live device grid.
+// Without a path argument it writes to a temp file the caller then reads.
+func cmdScreenshot(ctx context.Context, cmd *cli.Command) error {
+	jsonOutput := cmd.Bool("json")
+	args := cmd.Args().Slice()
+	if len(args) < 1 || len(args) > 2 {
+		return fmt.Errorf("screenshot expects a simulator UDID and an optional output path")
+	}
+	udid := args[0]
+
+	// Resolve the exact device first so a simctl alias such as "all" can never
+	// enter the capture path, consistent with boot/shutdown.
+	device, err := simslim.FindDevice(ctx, udid, "")
+	if err != nil {
+		return err
+	}
+	if device.State != "Booted" {
+		return fmt.Errorf("simulator must be booted to capture a screenshot (it is %s)", device.State)
+	}
+
+	dest := ""
+	if len(args) == 2 {
+		dest = args[1]
+	} else {
+		f, err := os.CreateTemp("", "simslim-screenshot-*.png")
+		if err != nil {
+			return fmt.Errorf("create screenshot file: %w", err)
+		}
+		dest = f.Name()
+		f.Close()
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, simslim.ShutdownTimeout)
+	defer cancel()
+	if err := simslim.CaptureScreenshot(tctx, device.Set, udid, dest); err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeJSON(simslim.ScreenshotOutput{UDID: udid, Name: device.Name, Path: dest})
+	}
+	fmt.Printf("Captured %s screenshot to %s\n", udid, dest)
+	return nil
+}
+
 func cmdOn(ctx context.Context, cmd *cli.Command) error {
 	preserveBootState := cmd.Bool("preserve-boot-state")
 	noReboot := cmd.Bool("no-reboot")
@@ -1157,6 +1202,9 @@ COMMANDS
                        Repair source-bound state in an existing clone
   rename <udid> <name> Rename a simulator
   boot <udid>          Boot a simulator and wait for its services
+  screenshot <udid> [path]
+                       Capture a booted simulator's screen as a PNG (to path,
+                       or a temp file); --json reports the written path
   shutdown <udid>      Shut down a booted simulator
   erase <udid>         Erase a simulator's apps, data, and settings
   delete <udid>        Permanently delete a simulator
