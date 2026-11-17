@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/mattn/go-isatty"
 	"github.com/mobai-app/simslim"
@@ -843,6 +844,16 @@ func cmdWatch(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if cmd.Bool("json") {
+		var mu sync.Mutex
+		encoder := json.NewEncoder(os.Stdout)
+		events := func(e simslim.WatchEvent) {
+			mu.Lock()
+			defer mu.Unlock()
+			_ = encoder.Encode(e)
+		}
+		return simslim.WatchWithEvents(ctx, p, cmd.Duration("interval"), nil, events)
+	}
 	report := simslim.Reporter(func(msg string) { fmt.Fprintln(os.Stderr, msg) })
 	sets := append([]string{"default", "testing"}, simslim.ExtraDeviceSetTokens()...)
 	fmt.Fprintf(os.Stderr, "Watching device sets [%s]; slimming each simulator before it boots where its runtime allows, and no-reboot as it boots. Ctrl-C to stop.\n", strings.Join(sets, ", "))
@@ -1111,6 +1122,9 @@ COMMANDS
       --except ids     Leave these categories enabled (comma-separated)
       --keep labels    Keep these individual daemons running (comma-separated)
       --interval dur   How often to rescan for booting simulators (default 3s)
+      --json           One JSON object per event on stdout, a stable interface
+                       for wrappers: wait for "slimmed" after a boot before
+                       enabling services on it
   status <udid>        Report how slim a booted simulator is
       --dropped        Also list the disabled daemons grouped by category
   verify <udid>        Check that a booted simulator's disable overrides still
