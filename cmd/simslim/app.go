@@ -53,6 +53,7 @@ func newApp() *cli.Command {
 		{Name: "repair-clone", Flags: []cli.Flag{jsonFlag()}, Action: cmdRepairClone},
 		{Name: "rename", Flags: []cli.Flag{jsonFlag()}, Action: cmdRename},
 		{Name: "boot", Flags: []cli.Flag{jsonFlag()}, Action: cmdBoot},
+		{Name: "screenshot", Flags: []cli.Flag{jsonFlag()}, Action: cmdScreenshot},
 		{Name: "shutdown", Flags: []cli.Flag{jsonFlag()}, Action: cmdShutdown},
 		{Name: "erase", Flags: []cli.Flag{jsonFlag()}, Action: cmdErase},
 		{Name: "delete", Flags: []cli.Flag{jsonFlag()}, Action: cmdDelete},

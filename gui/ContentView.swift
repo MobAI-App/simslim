@@ -7,6 +7,7 @@ struct ContentView: View {
   @State private var searchIsExpanded = false
   @State private var managementSheet: SimulatorManagementSheet?
   @State private var slimmingMode: SlimmingMode = .memory
+  @State private var deviceLayout: DeviceLayout = .table
 
   private var filteredDevices: [SimulatorDevice] {
     guard !searchText.isEmpty else { return model.devices }
@@ -37,6 +38,13 @@ struct ContentView: View {
     return "disk:" + model.selectedUDIDs.sorted().joined(separator: ",")
   }
 
+  // Restarts the grid's capture loop when the layout changes or the set of
+  // booted simulators does, so a freshly booted device gets a preview promptly.
+  private var screenshotRefreshID: String {
+    guard deviceLayout == .grid else { return "table" }
+    return "grid:" + model.devices.filter(\.isBooted).map(\.udid).sorted().joined(separator: ",")
+  }
+
   var body: some View {
     NavigationSplitView {
       ProfileSidebar(mode: $slimmingMode)
@@ -47,9 +55,15 @@ struct ContentView: View {
         Divider()
         selectionBar
         Divider()
-        simulatorTable
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-          .layoutPriority(1)
+        Group {
+          if deviceLayout == .grid {
+            simulatorGrid
+          } else {
+            simulatorTable
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .layoutPriority(1)
         Divider()
         ActivityPanel()
       }
@@ -187,11 +201,34 @@ struct ContentView: View {
       }
 
       ToolbarItem(placement: .automatic) {
+        Picker("Layout", selection: $deviceLayout) {
+          ForEach(DeviceLayout.allCases) { layout in
+            Image(systemName: layout.systemImage)
+              .help("\(layout.rawValue) view")
+              .tag(layout)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .help("Switch between the table and the live device grid")
+      }
+
+      ToolbarItem(placement: .automatic) {
         CollapsibleToolbarSearch(
           text: $searchText,
           prompt: "Find a simulator",
           isExpanded: $searchIsExpanded
         )
+      }
+    }
+    .task(id: screenshotRefreshID) {
+      guard deviceLayout == .grid else { return }
+      // Keep the grid's previews live: capture now, then every few seconds for
+      // as long as the grid stays on screen. The task is cancelled when the
+      // view id changes (layout switch, device-set change) or the view goes away.
+      while !Task.isCancelled {
+        await model.refreshScreenshots(for: model.devices)
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
       }
     }
     .sheet(item: $managementSheet) { sheet in
@@ -343,6 +380,47 @@ struct ContentView: View {
         }
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
       }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+  }
+
+  private var simulatorGrid: some View {
+    GeometryReader { geometry in
+      Group {
+        if model.isRefreshing && model.devices.isEmpty {
+          VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading simulators…")
+              .foregroundStyle(.secondary)
+          }
+          .frame(width: geometry.size.width, height: geometry.size.height)
+        } else if filteredDevices.isEmpty {
+          ContentUnavailableView(
+            searchText.isEmpty ? "No Simulators" : "No Matches",
+            systemImage: "rectangle.slash",
+            description: Text(
+              searchText.isEmpty
+                ? "Install an iOS, tvOS, watchOS, or visionOS Simulator runtime in Xcode."
+                : "Try a different name, UDID, or OS version.")
+          )
+          .frame(width: geometry.size.width, height: geometry.size.height)
+        } else {
+          ScrollView {
+            LazyVGrid(
+              columns: [GridItem(.adaptive(minimum: 190, maximum: 240), spacing: 16)],
+              alignment: .leading,
+              spacing: 16
+            ) {
+              ForEach(filteredDevices) { device in
+                SimulatorGridCard(device: device, managementSheet: $managementSheet)
+              }
+            }
+            .padding(18)
+            .frame(width: geometry.size.width, alignment: .topLeading)
+          }
+        }
+      }
+      .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
@@ -1492,6 +1570,143 @@ private struct SimulatorRow: View {
         message: "Finder could not open \(url.path)."
       )
       return
+    }
+  }
+}
+
+private struct SimulatorGridCard: View {
+  @EnvironmentObject private var model: AppModel
+  let device: SimulatorDevice
+  @Binding var managementSheet: SimulatorManagementSheet?
+
+  private var isSelected: Bool { model.selectedUDIDs.contains(device.udid) }
+  private var operation: String? { model.activeOperations[device.udid] }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 9) {
+      screen
+        .aspectRatio(0.56, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .topTrailing) { badge }
+        .overlay(
+          RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(isSelected ? Color.accentColor : Color.black.opacity(0.1), lineWidth: 2)
+        )
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(device.name)
+          .font(.subheadline.weight(.semibold))
+          .lineLimit(1)
+        HStack(spacing: 5) {
+          Image(systemName: device.deviceSymbol)
+          Text(device.runtimeName)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+          BootStateView(isBooted: device.isBooted)
+          Spacer(minLength: 0)
+          Image(systemName: model.slimState(for: device).systemImage)
+            .foregroundStyle(.secondary)
+            .help("Service slimming: \(model.slimState(for: device).title)")
+        }
+        .font(.caption)
+      }
+    }
+    .padding(11)
+    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 15))
+    .overlay(
+      RoundedRectangle(cornerRadius: 15)
+        .strokeBorder(
+          isSelected ? Color.accentColor.opacity(0.6) : Color.black.opacity(0.08), lineWidth: 1)
+    )
+    .contentShape(RoundedRectangle(cornerRadius: 15))
+    .onTapGesture {
+      guard !model.isBusy(device) else { return }
+      model.toggleSelection(device.udid)
+    }
+    .contextMenu { cardMenu }
+    .help(device.name)
+  }
+
+  @ViewBuilder private var screen: some View {
+    if device.isBooted {
+      if let image = model.screenshot(for: device.udid) {
+        Image(nsImage: image)
+          .resizable()
+          .interpolation(.medium)
+          .scaledToFit()
+      } else {
+        VStack(spacing: 8) {
+          ProgressView().controlSize(.small)
+          Text("Capturing…")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    } else {
+      VStack(spacing: 8) {
+        Image(systemName: device.deviceSymbol)
+          .font(.system(size: 34, weight: .light))
+          .foregroundStyle(.tertiary)
+        Text("Shut Down")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+
+  @ViewBuilder private var badge: some View {
+    if operation != nil {
+      ProgressView()
+        .controlSize(.small)
+        .padding(7)
+        .background(.ultraThinMaterial, in: Circle())
+        .padding(7)
+    } else if isSelected {
+      Image(systemName: "checkmark.circle.fill")
+        .symbolRenderingMode(.palette)
+        .foregroundStyle(.white, Color.accentColor)
+        .font(.title3)
+        .padding(7)
+    }
+  }
+
+  @ViewBuilder private var cardMenu: some View {
+    if device.isBooted {
+      Button {
+        Task { await model.shutdownSimulator(device) }
+      } label: {
+        Label("Shut Down Simulator", systemImage: "stop.fill")
+      }
+    } else {
+      Button {
+        Task { await model.bootSimulator(device) }
+      } label: {
+        Label("Boot Simulator", systemImage: "play.fill")
+      }
+    }
+    Button {
+      managementSheet = .slimmingRecommendation([device])
+    } label: {
+      Label("Slim Simulator", systemImage: "minus.circle")
+    }
+    .disabled(model.isBatchRunning)
+    Button {
+      Task { await model.restoreOriginalServices(for: device) }
+    } label: {
+      Label("Unslim Simulator", systemImage: "plus.circle")
+    }
+    .disabled(model.isBatchRunning)
+    Divider()
+    Button {
+      managementSheet = .rename(device)
+    } label: {
+      Label("Rename…", systemImage: "pencil")
     }
   }
 }

@@ -135,6 +135,10 @@ struct SimSlimBackend {
     try await decode(SimulatorMutationResult.self, arguments: ["shutdown", "--json", udid])
   }
 
+  func screenshot(udid: String, to path: String) async throws -> SimulatorScreenshot {
+    try await decode(SimulatorScreenshot.self, arguments: ["screenshot", "--json", udid, path])
+  }
+
   private func decode<T: Decodable>(_ type: T.Type, arguments: [String]) async throws -> T {
     let output = try await execute(arguments)
     do {

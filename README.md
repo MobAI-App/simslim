@@ -108,6 +108,7 @@ simslim clone <udid> <name>
 simslim repair-clone <source-udid> <clone-udid>
 simslim rename <udid> <name>
 simslim boot <udid>      # boot a simulator and wait for its services
+simslim screenshot <udid> [path]  # PNG of a booted simulator's screen
 simslim shutdown <udid>  # shut down a booted simulator
 simslim erase <udid>     # erase apps, data, settings, and slimming overrides
 simslim delete <udid>    # permanently delete a simulator

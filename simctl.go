@@ -349,6 +349,65 @@ func Shutdown(ctx context.Context, set, udid string) error {
 	return nil
 }
 
+// CaptureScreenshot writes a PNG of a booted simulator's screen to destPath via
+// `simctl io screenshot`. The caller resolves the exact device first (so an
+// alias like "all" can never enter this path) and guarantees it is booted: a
+// shutdown simulator has no screen to capture.
+//
+// A device with more than one display (for example an iPad presenting an
+// external display) makes simctl refuse to choose and list the displays,
+// marking the device's own screen "(primary)". That listing is the only place
+// simctl exposes the display ids, so on that error we parse out the primary id
+// and retry against it.
+func CaptureScreenshot(ctx context.Context, set, udid, destPath string) error {
+	out, err := runScreenshot(ctx, set, udid, destPath, "")
+	if err == nil {
+		return nil
+	}
+	if display := primaryDisplayID(out); display != "" {
+		if out2, err2 := runScreenshot(ctx, set, udid, destPath, display); err2 == nil {
+			return nil
+		} else {
+			out, err = out2, err2
+		}
+	}
+	return fmt.Errorf("simctl io screenshot: %w: %s", err, strings.TrimSpace(out))
+}
+
+func runScreenshot(ctx context.Context, set, udid, destPath, display string) (string, error) {
+	sub := []string{"io", udid, "screenshot", "--type=png"}
+	if display != "" {
+		sub = append(sub, "--display="+display)
+	}
+	sub = append(sub, destPath)
+	out, err := exec.CommandContext(ctx, "xcrun", simctlArgs(set, sub...)...).CombinedOutput()
+	return string(out), err
+}
+
+// primaryDisplayID returns the numeric id of the display simctl's multi-display
+// error marks "(primary)", or "" when the output is not that error. The lines
+// look like `    --display=1  LCD (primary) 1398x2034`; the exact "(primary)"
+// match skips the "(primary-1)" external-display line.
+func primaryDisplayID(simctlOutput string) string {
+	for _, line := range strings.Split(simctlOutput, "\n") {
+		if !strings.Contains(line, "(primary)") {
+			continue
+		}
+		_, after, found := strings.Cut(line, "--display=")
+		if !found {
+			continue
+		}
+		id := after
+		if i := strings.IndexFunc(id, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
+			id = id[:i]
+		}
+		if id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 // readDisabled returns the labels currently disabled in the device's system
 // domain. A label absent from the output is enabled.
 func readDisabled(ctx context.Context, set, udid string) (map[string]bool, error) {

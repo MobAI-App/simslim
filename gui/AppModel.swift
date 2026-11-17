@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(AppKit)
+  import AppKit
+#endif
+
 @MainActor
 final class AppModel: ObservableObject {
   @Published private(set) var devices: [SimulatorDevice] = []
@@ -7,6 +11,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var diskCleanupCategories: [DiskCleanupCategory] = []
   @Published private(set) var diskCleanupPlans: [String: SimulatorDiskCleanupPlan] = [:]
   @Published private(set) var measurements: [String: SimulatorMeasurement] = [:]
+  @Published private(set) var screenshots: [String: NSImage] = [:]
   @Published private(set) var diskSizes: [String: SimulatorDiskMeasurement] = [:]
   @Published private(set) var diskSizeLoadingUDIDs: Set<String> = []
   @Published private(set) var activeOperations: [String: String] = [:]
@@ -386,6 +391,56 @@ final class AppModel: ObservableObject {
         "Could not measure \(device.name): \(error.localizedDescription)", present: true)
     }
   }
+
+  /// Returns the latest captured screen for a simulator, or nil when none has
+  /// been captured (shutdown, or a capture that has not completed yet).
+  func screenshot(for udid: String) -> NSImage? { screenshots[udid] }
+
+  /// Captures a fresh screen for every booted simulator so the grid shows live
+  /// previews, and drops images for simulators that are no longer booted.
+  /// Failures are silent: a card with no image shows a placeholder rather than
+  /// raising an error dialog, since the grid refreshes on a timer.
+  func refreshScreenshots(for snapshot: [SimulatorDevice]) async {
+    guard let backend else { return }
+    let booted = snapshot.filter(\.isBooted)
+    let directory = Self.screenshotDirectory
+    let captured = await withTaskGroup(of: (String, NSImage?).self) { group -> [String: NSImage] in
+      let limit = 4
+      var iterator = booted.makeIterator()
+      func startNext() {
+        guard let device = iterator.next() else { return }
+        let path = directory.appendingPathComponent("\(device.udid).png").path
+        group.addTask {
+          do {
+            let result = try await backend.screenshot(udid: device.udid, to: path)
+            return (device.udid, NSImage(contentsOfFile: result.path))
+          } catch {
+            return (device.udid, nil)
+          }
+        }
+      }
+      for _ in 0..<min(limit, booted.count) { startNext() }
+      var images: [String: NSImage] = [:]
+      for await (udid, image) in group {
+        if let image { images[udid] = image }
+        startNext()
+      }
+      return images
+    }
+    // Keep a previous frame for a device still capturing this pass, but discard
+    // anything no longer booted so the grid never shows a stale, dead screen.
+    let bootedUDIDs = Set(booted.map(\.udid))
+    var next = screenshots.filter { bootedUDIDs.contains($0.key) }
+    for (udid, image) in captured { next[udid] = image }
+    screenshots = next
+  }
+
+  private static let screenshotDirectory: URL = {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("simslim-screenshots", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }()
 
   func applyProfileToSelection() async {
     await applyProfile(to: selectedDevices)

@@ -7,6 +7,22 @@ enum SlimmingMode: String, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+/// How the detail pane lists simulators: the dense table, or a grid of cards
+/// showing each booted simulator's live screen.
+enum DeviceLayout: String, CaseIterable, Identifiable {
+  case table = "Table"
+  case grid = "Grid"
+
+  var id: String { rawValue }
+
+  var systemImage: String {
+    switch self {
+    case .table: return "list.bullet"
+    case .grid: return "square.grid.2x2"
+    }
+  }
+}
+
 struct SimulatorDevice: Decodable, Identifiable, Equatable {
   let udid: String
   let name: String
@@ -156,6 +172,14 @@ struct SimulatorMutationResult: Decodable, Equatable {
   let udid: String
   let name: String?
   let sourceUdid: String?
+}
+
+/// The PNG path `simslim screenshot --json` wrote for a booted simulator, used
+/// to render its live screen in the device grid.
+struct SimulatorScreenshot: Decodable, Equatable {
+  let udid: String
+  let name: String?
+  let path: String
 }
 
 enum ServiceSlimState: Equatable {
