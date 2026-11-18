@@ -154,7 +154,7 @@ extension Simctl {
       failures = results.failures
       if deadlineExpired {
         throw SimSlimError(
-          "\(total - done)/\(total) launchctl transitions incomplete: context deadline exceeded")
+          "\(total - done)/\(total) launchctl transitions incomplete: \(contextError)")
       }
       pending = results.failed
       pass += 1

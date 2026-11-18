@@ -432,4 +432,102 @@ final class LiveTests: XCTestCase {
     XCTAssertEqual(categories, ["search", "siri"])
     XCTAssertEqual(labels, [category("search")[0]])
   }
+
+  // MARK: - from the independent review
+
+  func testDisableFailsWhenTheOverrideIsAcceptedButNeverAppears() throws {
+    let label = category("search")[0]
+    let host = host(loaded: [label])
+    // launchctl exits 0 for `disable` but nothing changes: only the read-back sees it.
+    host.failTransition = { verb, l in
+      verb == "disable" && l == label ? CommandResult(status: 0) : nil
+    }
+    XCTAssertThrowsError(try simctl(host).disableServices(udid: udid, ids: [label])) {
+      XCTAssertEqual("\($0)", "1 of 1 disable overrides did not take")
+    }
+  }
+
+  func testWithoutARuntimeRootEveryUnloadedLabelCountsAsOneLaunchdShouldLoad() throws {
+    let label = category("search")[0]
+    let host = host(disabled: [label])  // no runtime roots: plists cannot be looked up
+    let out = try simctl(host).enableServices(udid: udid, ids: [label])
+    XCTAssertEqual(host.disabled[udid], [])
+    XCTAssertEqual(out.notStarted, [label], "re-enabled, but not loaded in this boot")
+  }
+
+  func testDisableValidatesTheProfileBeforeTouchingTheSimulator() throws {
+    let label = category("search")[0]
+    try writeProfile(#"{"except":["search"],"keep":["\#(label)"]}"#)
+    let host = host(loaded: Set(category("search")))
+    XCTAssertThrowsError(
+      try simctl(host).disableServices(udid: udid, ids: [label], save: profilePath))
+    XCTAssertEqual(host.disabled[udid], [])
+    XCTAssertTrue(spawnVerbs(host).filter { !["print-disabled", "list"].contains($0) }.isEmpty)
+  }
+
+  func testAFailedLiveDisableLeavesTheProfileAlone() throws {
+    let label = category("search")[0]
+    try writeProfile(#"{"except":["siri"],"keep":["\#(label)"]}"#)
+    let host = host(loaded: [label])
+    host.failTransition = { _, l in l == label ? CommandResult(status: 1) : nil }
+    XCTAssertThrowsError(
+      try simctl(host).disableServices(udid: udid, ids: [label], save: profilePath)
+    ) {
+      XCTAssertTrue("\($0)".hasSuffix("(profile \(profilePath) not changed)"), "\($0)")
+    }
+    XCTAssertTrue(try String(contentsOfFile: profilePath, encoding: .utf8).contains(label))
+  }
+
+  func testDisablingOnlyWhatThePlatformKeepsStopsNothing() throws {
+    let host = host(runtime: watch, loaded: ["com.apple.homed"])
+    let out = try simctl(host).disableServices(udid: udid, ids: ["com.apple.homed"])
+    XCTAssertEqual(out.labels, [])
+    XCTAssertEqual(out.stillEnabled, ["com.apple.homed"])
+    XCTAssertTrue(spawnVerbs(host).filter { !["print-disabled", "list"].contains($0) }.isEmpty)
+  }
+
+  func testWhitespacePaddedEntriesAreFoundNotDuplicated() throws {
+    try writeProfile(#"{"except":[" search "],"keep":["  "]}"#)
+    // Disabling finds the padded category and removes it.
+    try saveServices(path: profilePath, categories: ["search"], labels: [], enable: false)
+    XCTAssertEqual(
+      try parseSlimProfile(Data(contentsOf: URL(fileURLWithPath: profilePath)), path: "p").except,
+      [])
+    // Enabling a category already present padded does not add it again.
+    try writeProfile(#"{"except":[" search "]}"#)
+    let (data, changed) = try updatedProfile(
+      path: profilePath, categories: ["search"], labels: [], enable: true)
+    XCTAssertFalse(changed)
+    XCTAssertNil(data)
+  }
+
+  func testASymlinkNamedWithABareFileNameIsFollowed() throws {
+    let target = root + "/shared.json"
+    try #"{"except":[]}"#.write(toFile: target, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target)
+    let cwd = FileManager.default.currentDirectoryPath
+    defer { FileManager.default.changeCurrentDirectoryPath(cwd) }
+    FileManager.default.changeCurrentDirectoryPath(root)
+    try FileManager.default.createSymbolicLink(
+      atPath: root + "/link.json", withDestinationPath: "shared.json")
+    try saveServices(path: "link.json", categories: ["search"], labels: [], enable: true)
+    XCTAssertEqual(
+      try FileManager.default.destinationOfSymbolicLink(atPath: root + "/link.json"),
+      "shared.json", "still a symlink")
+    XCTAssertEqual(try loadSlimProfile(path: target).exceptCategories, ["search"])
+    let mode = try FileManager.default.attributesOfItem(atPath: target)[.posixPermissions] as? Int
+    XCTAssertEqual(mode, 0o600)
+  }
+
+  func testAProfilePathThatCannotBeReadIsNeverOverwrittenAsAMissingFile() throws {
+    // A symlink loop is an error (ELOOP), not a missing file to start afresh.
+    try FileManager.default.createSymbolicLink(
+      atPath: root + "/loop.json", withDestinationPath: root + "/loop.json")
+    XCTAssertThrowsError(
+      try saveServices(
+        path: root + "/loop.json", categories: ["search"], labels: [], enable: true))
+    XCTAssertEqual(
+      try FileManager.default.destinationOfSymbolicLink(atPath: root + "/loop.json"),
+      root + "/loop.json", "the symlink was not replaced")
+  }
 }

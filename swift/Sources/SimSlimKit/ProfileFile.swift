@@ -48,7 +48,10 @@ public struct SlimProfile: Equatable, Sendable {
 ///
 /// Like the Go version it rejects unknown fields and matches field names
 /// case-insensitively. Unlike it, a malformed document with trailing text after
-/// the first JSON value is rejected rather than ignored.
+/// the first JSON value is rejected rather than ignored. Foundation's parser also
+/// accepts what Go's rejects (trailing commas, a UTF-8 byte-order mark) and keeps
+/// the first of two identical keys where Go keeps the last; a file that relies on
+/// any of these reads differently here.
 public func loadSlimProfile(path: String) throws -> Profile {
   let data: Data
   do {

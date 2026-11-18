@@ -121,4 +121,40 @@ final class LiveCommandTests: XCTestCase {
     XCTAssertEqual(runCLI(["disable", "booted", "search"], host: host()).status, 1)
     XCTAssertEqual(runCLI(["enable", udid, "search", "--no-such"], host: host()).status, 1)
   }
+
+  func testDisableNothingToStopAndStillEnabledLines() {
+    let watch = FakeHost(devices: [
+      .init(
+        udid: udid, name: "Watch", runtime: "com.apple.CoreSimulator.SimRuntime.watchOS-11-5",
+        state: "Booted")
+    ])
+    watch.disabled[udid] = []
+    watch.loaded[udid] = ["com.apple.homed"]
+    let r = runCLI(["disable", udid, "com.apple.homed"], host: watch)
+    XCTAssertEqual(r.status, 0, r.stderr)
+    XCTAssertEqual(
+      r.stdout,
+      "Nothing to stop on \(udid).\n"
+        + "  1 stay enabled for another fully enabled category or the platform: com.apple.homed\n"
+        + "This lasts until the next `on` or `watch` pass; pass --save <profile.json> to keep it in a profile.\n"
+    )
+  }
+
+  func testDisableSaveMessages() {
+    let host = host()
+    host.loaded[udid] = Set(search)
+    let live = runCLI(["disable", udid, "search", "--save", root + "/a.json"], host: host)
+    XCTAssertEqual(live.status, 0, live.stderr)
+    XCTAssertTrue(
+      live.stdout.hasSuffix(
+        "Saved to \(root)/a.json. Apply it later with `simslim on \(udid) --profile \(root)/a.json`.\n"
+      ), live.stdout)
+  }
+
+  func testAnAliasSpawnsNothing() {
+    let host = host()
+    _ = runCLI(["enable", "all", "search"], host: host)
+    _ = runCLI(["disable", "booted", "search"], host: host)
+    XCTAssertFalse(host.calls.contains { $0.arguments.contains("spawn") })
+  }
 }

@@ -28,6 +28,10 @@ public struct Simctl: Sendable {
   /// deadline: every command is capped to what is left of it, and nothing starts
   /// once it has passed.
   public var deadline: Date?
+  /// Asked before every command and wait: true once the operation was cancelled
+  /// (a watched device shut down, or the user pressed Ctrl-C). A command already
+  /// running finishes or times out; nothing new starts.
+  public var cancelled: (@Sendable () -> Bool)?
   /// The clock the deadline is read from (a test replaces it).
   public var now: @Sendable () -> Date = { Date() }
 
@@ -44,7 +48,15 @@ public struct Simctl: Sendable {
     sleep(length)
   }
 
-  var deadlineExpired: Bool { deadline.map { now() >= $0 } ?? false }
+  /// True once the operation is over, by deadline or by cancellation.
+  var deadlineExpired: Bool {
+    cancelled?() == true || (deadline.map { now() >= $0 } ?? false)
+  }
+
+  /// What Go's context reports for the reason the operation is over.
+  var contextError: String {
+    cancelled?() == true ? "context canceled" : "context deadline exceeded"
+  }
 
   /// Runs a command under the operation deadline. The per-call `timeout` is
   /// capped to what is left of the deadline; a command killed by the deadline
@@ -53,13 +65,14 @@ public struct Simctl: Sendable {
     -> CommandResult
   {
     var limit = timeout
+    if cancelled?() == true { throw SimSlimError("context canceled") }
     if let deadline {
       let left = deadline.timeIntervalSince(now())
       if left <= 0 { throw SimSlimError("context deadline exceeded") }
       limit = min(limit ?? left, left)
     }
     let result = try runner.run(executable, arguments, timeout: limit)
-    if result.timedOut, deadlineExpired { throw SimSlimError("context deadline exceeded") }
+    if result.timedOut, deadlineExpired { throw SimSlimError(contextError) }
     return result
   }
 

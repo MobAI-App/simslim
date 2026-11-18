@@ -19,7 +19,13 @@ extension Catalog {
 /// Reads and validates a profile file, keeping its entries as written. A missing
 /// file is the default profile.
 func readSlimProfile(path: String) throws -> (profile: SlimProfile, exists: Bool) {
-  guard FileManager.default.fileExists(atPath: path) else { return (SlimProfile(), false) }
+  var info = stat()
+  if stat(path, &info) != 0 {
+    // Only a missing file starts from the default profile; a loop or a
+    // not-a-directory component is an error, never a reason to overwrite.
+    if errno == ENOENT { return (SlimProfile(), false) }
+    throw SimSlimError("read profile \(path): \(String(cString: strerror(errno)))")
+  }
   let data: Data
   do {
     data = try Data(contentsOf: URL(fileURLWithPath: path))
@@ -38,6 +44,14 @@ func updatedProfile(path: String, categories: [String], labels: [String], enable
   -> (data: Data?, changed: Bool)
 {
   var (profile, exists) = try readSlimProfile(path: path)
+  // Entries are compared as `resolve` reads them: trimmed, blanks ignored. A
+  // padded " search " is the category `search`, so it must be found, not added
+  // again or left behind.
+  func normalised(_ items: [String]) -> [String] {
+    items.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+  }
+  profile.except = normalised(profile.except)
+  profile.keep = normalised(profile.keep)
   let beforeExcept = profile.except
   let beforeKeep = profile.keep
   if enable {
@@ -79,7 +93,9 @@ public func saveServices(path: String, categories: [String], labels: [String], e
 func writeFileAtomic(path original: String, data: Data) throws {
   var path = original
   var mode = 0o644
-  let resolved = (original as NSString).resolvingSymlinksInPath
+  // Absolute against the working directory: a bare file name that is itself a
+  // symlink must be followed too.
+  let resolved = URL(fileURLWithPath: original).resolvingSymlinksInPath().path
   if FileManager.default.fileExists(atPath: resolved) {
     path = resolved
     if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
@@ -94,13 +110,17 @@ func writeFileAtomic(path original: String, data: Data) throws {
     ".\(base).\(UUID().uuidString)")
   defer { try? FileManager.default.removeItem(atPath: temp) }
   do {
-    guard FileManager.default.createFile(atPath: temp, contents: nil) else {
+    // Created private, so a 0600 profile is never briefly world-readable.
+    guard
+      FileManager.default.createFile(
+        atPath: temp, contents: nil, attributes: [.posixPermissions: 0o600])
+    else {
       throw SimSlimError("cannot create \(temp)")
     }
     let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: temp))
+    defer { try? handle.close() }
     try handle.write(contentsOf: data)
     try handle.synchronize()
-    try handle.close()
     try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: temp)
   } catch {
     throw SimSlimError("write profile \(path): \(error.localizedDescription)")

@@ -32,7 +32,7 @@ let usageText = """
     off <udid>           Restore a simulator to stock (re-enable + reboot)
     enable <udid> <ids>     Re-enable categories or daemons on a booted simulator now
     disable <udid> <ids>    Stop categories or daemons on a booted simulator now
-    watch            †   Slim every simulator until Ctrl-C
+    watch                Slim every simulator until Ctrl-C
     status <udid>        Report how slim a booted simulator is
         --dropped        Also list the disabled daemons grouped by category
     verify <udid>        Check that a booted simulator's disable overrides still
