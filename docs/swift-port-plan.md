@@ -149,10 +149,10 @@ These are not in the first release. The SwiftUI app depends on several of them, 
 
 | Item | Why deferred | Notes |
 |---|---|---|
-| `top` live view | Not needed for the RAM effect; the one-shot `measure` covers the numbers | Terminal redraw without a TUI library. Keep `--json` one-shot. |
+| `top` live view | Ported in M5b | Done: raw-mode terminal, alternate screen, 2 s refresh; one-shot and `--json` output as before. |
 | `profile` wizard | Profiles can be written by hand or via `enable --save` | Needs `stty` raw mode. |
-| `clone`, `repair-clone` | File writes in device data | Needs destructive-code review first. |
-| `rename`, `erase`, `delete` | Modify or remove whole simulators | Used by the GUI. Needs review first. |
+| `clone`, `repair-clone` | The owner does not use them (decided 2026-11-18). 882 lines of Go that rewrite paths and app registrations in a copied device. | TODO, later or never. Needs destructive-code review first. Unavailable in the Swift CLI until then. |
+| `rename`, `erase`, `delete` | Ported in M5a, independently reviewed | Done. |
 | `size`, `disk-categories`, `disk-plan`, `disk-clean` | `disk-clean` calls `RemoveAll` | Read-only parts may come first. `disk-clean` needs review first. |
 | App cutover to the Swift CLI | Requires all of the above | Then remove the Go tree. |
 
@@ -163,6 +163,7 @@ These are not in the first release. The SwiftUI app depends on several of them, 
 - **M2** simctl and read-only commands: `list`, `profiles`, `status`, `verify`, `doctor`, `measure`. **Done** (167 tests; every command checked through a fake host; the app's real `gui/Models.swift` decodes the JSON; `measure` cross-checked against `pgrep`/`ps`/`top` on a real Mac). Also run against a live throwaway simulator in an isolated device set (Xcode 27.2, iOS 27.2).
 - **M3a** Slimming: `on`, `off`, `on --no-reboot`, `boot`, `shutdown`, offline fast path, batch unload, 8-worker pool. **Done** (222 tests; 12 mutations in the slimming core, all caught; live run on a throwaway simulator: 246 to 83 processes, about 10.5 GB to 2.7 GB, slim persists across shutdown and boot, `off` restores stock). Awaiting the independent review of this core.
 - **M3b** Live `enable`/`disable` and `--save` (`live.go`, `profile_save.go`): **Done** (14 mutations in the new code caught after two added tests; run live on a throwaway simulator). Independently reviewed: one real bug (`--save` replaced a symlinked profile named by a bare file name) and several test gaps, all fixed.
+- **M5b** `top`: **Done** (pure model with 28 tests, key parser, raw-mode runner; checked in a pseudo-terminal: drill-down, Esc, `q`, Ctrl-C, SIGINT and SIGTERM all restore the terminal; 19 mutations, 4 survivors then covered). `deviceDiskUsage` is shared with the future `size` command.
 - **M5a** `rename`, `erase`, `delete`: **Done** (reviewed independently; no route for an alias or flag to reach the destructive simctl calls; live run on a throwaway simulator). One deliberate divergence from Go: erase and delete refuse a simulator that is Booting or Shutting Down, where Go runs them. Names print with Go's `%q` rules and trim with Go's space set. Remaining for the app cutover: `size`, `disk-categories`, `disk-plan`, `disk-clean`, `clone`.
 - **M4** `watch`: **Done** (kqueue device-set watcher, pre-boot store seeding, per-device after-boot slim with cancellation, `--json` events; 40 tests, 19 mutations caught or hung). Not run live: `watch` always scans the user's default device set, so a live run would slim their real simulators; run it on a Mac where that is intended. Cancellation stops the next command, not one already running (Go kills it).
 - **M5** Integration tests on a throwaway simulator, independent review of the mutating core, and parity run against the Go tool.

@@ -71,6 +71,14 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   /// Fails `simctl bootstatus` but leaves the device Booted, as a boot that
   /// started and never became ready.
   public var bootstatusFailure: String?
+  /// When set, a device's `dataPath` is `<dataRoot>/<udid>/data` instead of a
+  /// path that does not exist, so a test can create (or deliberately not create)
+  /// the directory.
+  public var dataRoot: String?
+  /// Makes `simctl list` report no data path for any device.
+  public var emptyDataPath = false
+  /// `du -sk` answers by path, in KiB; a path absent here makes `du` fail.
+  public var duKiB: [String: Int] = [:]
   /// Fails `simctl rename` / `erase` / `delete` with this stderr when set.
   public var managementFailure: String?
   /// Makes the device ignore shutdown, to exercise the shutdown timeout.
@@ -111,6 +119,12 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     case .pgrep: return pgrep(arguments)
     case .ps: return CommandResult(status: 0, stdout: Data(psOutput.utf8))
     case .top: return CommandResult(status: 0, stdout: Data(topOutput.utf8))
+    case .du:
+      guard arguments.count == 2, arguments[0] == "-sk", let kib = duKiB[arguments[1]] else {
+        return CommandResult(
+          status: 1, stderr: Data("du: \(arguments.last ?? ""): No such file or directory".utf8))
+      }
+      return CommandResult(status: 0, stdout: Data("\(kib)\t\(arguments[1])\n".utf8))
     default:
       return CommandResult(status: 127, stderr: Data("FakeHost: unexpected \(executable)".utf8))
     }
@@ -354,7 +368,8 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     for device in source {
       byRuntime[device.runtime, default: []].append([
         "udid": device.udid, "name": device.name, "state": device.state,
-        "isAvailable": device.isAvailable, "dataPath": "/fake/\(device.udid)/data",
+        "isAvailable": device.isAvailable,
+        "dataPath": emptyDataPath ? "" : "\(dataRoot ?? "/fake")/\(device.udid)/data",
       ])
     }
     let data = try! JSONSerialization.data(withJSONObject: ["devices": byRuntime])

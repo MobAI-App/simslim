@@ -48,7 +48,7 @@ let usageText = """
         --requires ids   Comma-separated feature IDs to verify
         --list           List every checkable feature and its daemons
     measure <udid>       Report a booted simulator's memory footprint
-    top [udid]       †   Live fleet monitor
+    top [udid]           Live fleet monitor
     size <udid>      †   Report a simulator's allocated disk footprint
     disk-categories  †   Show cleanup and protected system-asset categories
     disk-plan <udid> †   Measure reclaimable and stored data without deleting

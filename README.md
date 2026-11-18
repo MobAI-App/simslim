@@ -38,6 +38,24 @@ or
 go install github.com/mobai-app/simslim/cmd/simslim@latest
 ```
 
+### Build with Xcode only (Swift port, no Go)
+
+`swift/` is a Swift port with no third-party dependencies, built with the Xcode
+toolchain alone:
+
+```sh
+cd swift && swift build -c release
+.build/release/simslim --version
+```
+
+It covers `list`, `profiles`, `status`, `verify`, `doctor`, `measure`, `on`,
+`off`, `boot`, `shutdown`, `enable`, `disable`, `watch`, `rename`, `erase`,
+`delete`, and `top`. `profile`, `size`, `disk-*`, `clone`, and `repair-clone` are
+not ported yet and exit with a message saying so; the macOS app still needs the
+Go CLI for the disk and clone features. `scripts/verify-deps.sh` checks that the
+Swift code imports only Apple system modules, uses no network API, and links
+only system libraries.
+
 macOS only, and you need Xcode with an iOS, tvOS, watchOS, or visionOS Simulator
 runtime, since simslim drives simulators through `xcrun simctl`.
 

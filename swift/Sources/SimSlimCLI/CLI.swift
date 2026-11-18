@@ -13,7 +13,9 @@ public struct CLI {
   public var storeRoot: String
   /// Whose `Library/Developer` holds the device sets `watch` observes.
   public var home: String
-  /// Set by Ctrl-C; `watch` runs until it is.
+  /// Whether `top` may draw its live screen; false sends it to one-shot output.
+  public var isInteractive: @Sendable () -> Bool
+  /// Set by Ctrl-C; `watch` and `top` run until it is.
   public var interrupt: InterruptFlag
   public var stdout: Sink
   public var stderr: Sink
@@ -24,6 +26,9 @@ public struct CLI {
     runner: CommandRunning = SystemCommandRunner(),
     storeRoot: String = "/private/var/tmp",
     home: String = NSHomeDirectory(),
+    isInteractive: @escaping @Sendable () -> Bool = {
+      isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
+    },
     interrupt: InterruptFlag = InterruptFlag(),
     stdout: @escaping Sink,
     stderr: @escaping Sink
@@ -33,6 +38,7 @@ public struct CLI {
     self.runner = runner
     self.storeRoot = storeRoot
     self.home = home
+    self.isInteractive = isInteractive
     self.interrupt = interrupt
     self.stdout = stdout
     self.stderr = stderr
@@ -44,6 +50,7 @@ public struct CLI {
     var bootTimeout: TimeInterval
     var parsed: ParsedArguments
     var home: String
+    var isInteractive: Bool
     var interrupt: InterruptFlag
     var stdout: Sink
     var stderr: Sink
@@ -51,7 +58,7 @@ public struct CLI {
 
   /// Commands that exist in the Go CLI but are not in the Swift port yet.
   static let notYetPorted: Set<String> = [
-    "profile", "top", "size", "disk-categories",
+    "profile", "size", "disk-categories",
     "disk-plan", "disk-clean", "clone", "repair-clone",
   ]
 
@@ -75,6 +82,7 @@ public struct CLI {
       .bool("preserve-boot-state"),
     ],
     "off": [.bool("preserve-boot-state")],
+    "top": [.bool("json", onlyOnce: true)],
     "watch": [
       .bool("json"), .string("profile"), .string("except"), .string("keep"), .string("interval"),
     ],
@@ -159,7 +167,8 @@ public struct CLI {
     simctl.storeRoot = storeRoot
     let bootTimeout = try applyGlobalOptions(parsed, to: &simctl)
     let context = Context(
-      simctl: simctl, bootTimeout: bootTimeout, parsed: parsed, home: home, interrupt: interrupt,
+      simctl: simctl, bootTimeout: bootTimeout, parsed: parsed, home: home,
+      isInteractive: isInteractive(), interrupt: interrupt,
       stdout: stdout, stderr: stderr)
 
     switch command {
@@ -176,6 +185,7 @@ public struct CLI {
     case "rename": return try cmdRename(context)
     case "erase": return try cmdErase(context)
     case "delete": return try cmdDelete(context)
+    case "top": return try cmdTop(context)
     case "watch": return try cmdWatch(context)
     case "enable": return try cmdEnable(context)
     case "disable": return try cmdDisable(context)
