@@ -1,4 +1,4 @@
-.PHONY: app cli check format test swift-test swift-gen swift-gen-check verify-deps
+.PHONY: app cli check format test swift-lint swift-test swift-gen swift-gen-check verify-deps
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 
@@ -20,6 +20,9 @@ check: test
 format:
 	gofmt -w *.go
 	xcrun swift-format format --in-place --recursive gui
+
+swift-lint:
+	xcrun swift-format lint --strict --recursive swift/Sources swift/Tests
 
 swift-test:
 	cd swift && swift test

@@ -152,6 +152,30 @@ final class SlimTests: XCTestCase {
       ])
   }
 
+  func testStoreWriteDoesNotDropNonBooleanEntries() throws {
+    let dir = root + "/store/com.apple.CoreSimulator.SimDevice.\(udid)"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let text = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0"><dict>
+      <key>com.apple.other</key><integer>7</integer>
+      <key>com.apple.runtime.enabled</key><false/>
+      </dict></plist>
+      """
+    try text.write(toFile: dir + "/disabled.plist", atomically: true, encoding: .utf8)
+
+    let store = DisabledStore(root: root + "/store")
+    try store.write(udid: udid, toDisable: ["com.apple.mine"], toEnable: [])
+
+    let data = try Data(contentsOf: URL(fileURLWithPath: dir + "/disabled.plist"))
+    let dict = try XCTUnwrap(
+      PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        as? [String: Any])
+    XCTAssertEqual(dict["com.apple.other"] as? Int, 7, "an entry simslim does not own must survive")
+    XCTAssertEqual(dict["com.apple.mine"] as? Bool, true)
+    XCTAssertEqual(dict["com.apple.runtime.enabled"] as? Bool, false)
+  }
+
   func testStoreIgnoresNonBooleanValuesAndRejectsGarbage() throws {
     let text = """
       <?xml version="1.0" encoding="UTF-8"?>

@@ -38,10 +38,24 @@ struct DisabledStore: Sendable {
     return try DisabledStore.parse(data)
   }
 
+  /// Entries whose value is not a boolean, kept verbatim across a write.
+  private func readForeign(udid: String) -> [String: Any] {
+    let file = path(udid: udid)
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: file)),
+      let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        as? [String: Any]
+    else { return [:] }
+    return dict.filter { entry in
+      guard let number = entry.value as? NSNumber else { return true }
+      return CFGetTypeID(number) != CFBooleanGetTypeID()
+    }
+  }
+
   /// Merges the transitions into the store, leaving every other entry as it
   /// was. The write is atomic so launchd_sim never reads a half-written store.
   func write(udid: String, toDisable: [String], toEnable: [String]) throws {
     var entries = try readEntries(udid: udid)
+    let foreign = readForeign(udid: udid)
     for label in toDisable { entries[label] = true }
     for label in toEnable { entries[label] = false }
 
@@ -55,7 +69,18 @@ struct DisabledStore: Sendable {
     let temp = (dir as NSString).appendingPathComponent("disabled.plist.\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(atPath: temp) }
     do {
-      try DisabledStore.encode(entries).write(to: URL(fileURLWithPath: temp))
+      let data: Data
+      if foreign.isEmpty {
+        data = DisabledStore.encode(entries)
+      } else {
+        // Entries of another type are not ours to drop; let the plist writer
+        // serialize the mixed dictionary.
+        var merged: [String: Any] = foreign
+        for (label, value) in entries { merged[label] = value }
+        data = try PropertyListSerialization.data(
+          fromPropertyList: merged, format: .xml, options: 0)
+      }
+      try data.write(to: URL(fileURLWithPath: temp))
       try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: temp)
     } catch {
       throw SimSlimError("write launchd disable store: \(error.localizedDescription)")
