@@ -162,6 +162,6 @@ These are not in the first release. The SwiftUI app depends on several of them, 
 - **M1** Core model: allowlist, categories, features, delta logic, profile files, with the invariant tests ported first.
 - **M2** simctl and read-only commands: `list`, `profiles`, `status`, `verify`, `doctor`, `measure`. **Done** (167 tests; every command checked through a fake host; the app's real `gui/Models.swift` decodes the JSON; `measure` cross-checked against `pgrep`/`ps`/`top` on a real Mac). Also run against a live throwaway simulator in an isolated device set (Xcode 27.2, iOS 27.2).
 - **M3a** Slimming: `on`, `off`, `on --no-reboot`, `boot`, `shutdown`, offline fast path, batch unload, 8-worker pool. **Done** (222 tests; 12 mutations in the slimming core, all caught; live run on a throwaway simulator: 246 to 83 processes, about 10.5 GB to 2.7 GB, slim persists across shutdown and boot, `off` restores stock). Awaiting the independent review of this core.
-- **M3b** Live `enable`/`disable` and `--save` (`live.go`, `profile_save.go`): not started.
+- **M3b** Live `enable`/`disable` and `--save` (`live.go`, `profile_save.go`): **Done** (14 mutations in the new code caught after two added tests; run live on a throwaway simulator). Awaiting independent review.
 - **M4** `watch`.
 - **M5** Integration tests on a throwaway simulator, independent review of the mutating core, and parity run against the Go tool.

@@ -30,8 +30,8 @@ let usageText = """
     profile [path]   †   Interactively build a --profile JSON file
     on <udid>            Slim a simulator (persist disables + reboot slim)
     off <udid>           Restore a simulator to stock (re-enable + reboot)
-    enable <udid> <ids>  †  Re-enable categories or daemons on a booted simulator now
-    disable <udid> <ids> †  Stop categories or daemons on a booted simulator now
+    enable <udid> <ids>     Re-enable categories or daemons on a booted simulator now
+    disable <udid> <ids>    Stop categories or daemons on a booted simulator now
     watch            †   Slim every simulator until Ctrl-C
     status <udid>        Report how slim a booted simulator is
         --dropped        Also list the disabled daemons grouped by category

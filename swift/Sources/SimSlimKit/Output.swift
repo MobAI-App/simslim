@@ -112,3 +112,53 @@ public struct SimulatorMutationOutput: Codable, Equatable, Sendable {
     sourceUdid = try c.decodeIfPresent(String.self, forKey: .sourceUdid) ?? ""
   }
 }
+
+/// The result of `enable` and `disable`.
+public struct ServicesOutput: Codable, Equatable, Sendable {
+  public var action: String  // "enable" or "disable"
+  public var udid: String
+  public var live: Bool  // false: the simulator is not booted, only the profile was saved
+  public var labels: [String]  // daemons enabled, or stopped by disable
+  public var notStarted: [String]  // enable: re-enabled, but launchd starts them at the next boot
+  public var stillEnabled: [String]  // disable: kept running for another category or the platform
+  public var saved: String  // the profile file --save created or updated
+
+  public init(
+    action: String, udid: String, live: Bool, labels: [String] = [], notStarted: [String] = [],
+    stillEnabled: [String] = [], saved: String = ""
+  ) {
+    self.action = action
+    self.udid = udid
+    self.live = live
+    self.labels = labels
+    self.notStarted = notStarted
+    self.stillEnabled = stillEnabled
+    self.saved = saved
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case action, udid, live, labels, notStarted, stillEnabled, saved
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(action, forKey: .action)
+    try c.encode(udid, forKey: .udid)
+    try c.encode(live, forKey: .live)
+    try c.encode(labels, forKey: .labels)  // always present, `[]` when empty
+    if !notStarted.isEmpty { try c.encode(notStarted, forKey: .notStarted) }  // Go omitempty
+    if !stillEnabled.isEmpty { try c.encode(stillEnabled, forKey: .stillEnabled) }
+    if !saved.isEmpty { try c.encode(saved, forKey: .saved) }
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    action = try c.decode(String.self, forKey: .action)
+    udid = try c.decode(String.self, forKey: .udid)
+    live = try c.decode(Bool.self, forKey: .live)
+    labels = try c.decode([String].self, forKey: .labels)
+    notStarted = try c.decodeIfPresent([String].self, forKey: .notStarted) ?? []
+    stillEnabled = try c.decodeIfPresent([String].self, forKey: .stillEnabled) ?? []
+    saved = try c.decodeIfPresent(String.self, forKey: .saved) ?? ""
+  }
+}

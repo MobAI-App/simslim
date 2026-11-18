@@ -258,6 +258,21 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
         loaded[udid]?.remove(label)
       }
       return CommandResult(status: 0)
+    case "load" where args.count >= 3 && args[1] == "-w":
+      // Lifts each job's override and loads it, unless the test makes it fail.
+      for path in args.dropFirst(2) {
+        guard let label = plistLabels[path] else { continue }
+        if failTransition?("load", label) != nil { continue }
+        disabled[udid, default: []].remove(label)
+        loaded[udid, default: []].insert(label)
+      }
+      return CommandResult(status: 0)
+    case "bootstrap" where args.count == 3 && args[1] == "system":
+      guard let label = plistLabels[args[2]] else { return CommandResult(status: 113) }
+      if failTransition?("bootstrap", label) != nil { return CommandResult(status: 5) }
+      if disabled[udid]?.contains(label) == true { return CommandResult(status: 5) }
+      loaded[udid, default: []].insert(label)
+      return CommandResult(status: 0)
     default:
       return nil
     }

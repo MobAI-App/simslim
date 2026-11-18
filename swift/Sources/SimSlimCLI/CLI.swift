@@ -41,7 +41,7 @@ public struct CLI {
 
   /// Commands that exist in the Go CLI but are not in the Swift port yet.
   static let notYetPorted: Set<String> = [
-    "profile", "enable", "disable", "watch", "top", "size", "disk-categories",
+    "profile", "watch", "top", "size", "disk-categories",
     "disk-plan", "disk-clean", "clone", "repair-clone", "rename", "erase", "delete",
   ]
 
@@ -65,6 +65,8 @@ public struct CLI {
       .bool("preserve-boot-state"),
     ],
     "off": [.bool("preserve-boot-state")],
+    "enable": [.bool("json", onlyOnce: true), .string("save")],
+    "disable": [.bool("json", onlyOnce: true), .string("save")],
   ]
 
   /// Runs the command line (without the program name) and returns the exit status.
@@ -154,6 +156,8 @@ public struct CLI {
     case "shutdown": return try cmdShutdown(context)
     case "on": return try cmdOn(context)
     case "off": return try cmdOff(context)
+    case "enable": return try cmdEnable(context)
+    case "disable": return try cmdDisable(context)
     default: preconditionFailure("command \(command) has specs but no handler")
     }
   }

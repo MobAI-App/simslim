@@ -200,4 +200,89 @@ extension CLI {
     }
     return 0
   }
+
+  // MARK: - enable / disable
+
+  /// `<udid> [ids...]`, where each ID argument may itself be a comma-separated
+  /// list, as in `simslim enable <udid> icloud,photos`.
+  private func udidAndIDs(_ args: [String]) throws -> (udid: String, ids: [String]) {
+    guard let udid = args.first else {
+      throw SimSlimError(
+        "expected a simulator UDID (see `simslim list`), then category IDs or launchd labels (see `simslim profiles`)"
+      )
+    }
+    return (udid, args.dropFirst().flatMap { splitList($0) })
+  }
+
+  /// Progress goes to stderr, except under --json, where a consumer reading a
+  /// combined stream must get clean JSON.
+  private func quietIfJSON(_ context: Context) -> Reporter? {
+    context.parsed.bool("json") ? nil : progress(context)
+  }
+
+  func cmdEnable(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let (udid, ids) = try udidAndIDs(context.parsed.positionals)
+    let out = try bounded(context.simctl, by: context.bootTimeout).enableServices(
+      udid: udid, ids: ids, save: context.parsed.string("save"),
+      reporter: quietIfJSON(context))
+    if json {
+      context.stdout(try jsonText(out))
+      return 0
+    }
+    if out.live {
+      context.stdout("Enabled \(out.labels.count) services on \(udid) without a reboot.\n")
+    }
+    if !out.notStarted.isEmpty {
+      context.stdout(
+        "  launchd starts \(out.notStarted.count) of them at the next boot, not in this one: \(out.notStarted.joined(separator: ", "))\n"
+      )
+    }
+    printSaved(context, out)
+    return 0
+  }
+
+  func cmdDisable(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let (udid, ids) = try udidAndIDs(context.parsed.positionals)
+    let out = try bounded(context.simctl, by: context.bootTimeout).disableServices(
+      udid: udid, ids: ids, save: context.parsed.string("save"),
+      reporter: quietIfJSON(context))
+    if json {
+      context.stdout(try jsonText(out))
+      return 0
+    }
+    if out.live {
+      if out.labels.isEmpty {
+        context.stdout("Nothing to stop on \(udid).\n")
+      } else {
+        context.stdout("Stopped \(out.labels.count) services on \(udid) without a reboot.\n")
+      }
+    }
+    if !out.stillEnabled.isEmpty {
+      context.stdout(
+        "  \(out.stillEnabled.count) stay enabled for another fully enabled category or the platform: \(out.stillEnabled.joined(separator: ", "))\n"
+      )
+    }
+    printSaved(context, out)
+    return 0
+  }
+
+  /// Closes enable and disable with what persists: the saved profile, or a
+  /// reminder that the next `on` or `watch` pass applies its profile again.
+  private func printSaved(_ context: Context, _ out: ServicesOutput) {
+    if out.saved.isEmpty {
+      context.stdout(
+        "This lasts until the next `on` or `watch` pass; pass --save <profile.json> to keep it in a profile.\n"
+      )
+    } else if out.live {
+      context.stdout(
+        "Saved to \(out.saved). Apply it later with `simslim on \(out.udid) --profile \(out.saved)`.\n"
+      )
+    } else {
+      context.stdout(
+        "Saved to \(out.saved); nothing was applied, the simulator is not booted. Apply it with `simslim on \(out.udid) --profile \(out.saved)`.\n"
+      )
+    }
+  }
 }
