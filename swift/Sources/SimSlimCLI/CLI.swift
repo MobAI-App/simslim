@@ -17,6 +17,8 @@ public struct CLI {
   public var isInteractive: @Sendable () -> Bool
   /// Set by Ctrl-C; `watch` and `top` run until it is.
   public var interrupt: InterruptFlag
+  /// Where `profile` reads its prompts and keys; nil uses the terminal.
+  var wizardInput: WizardInput?
   public var stdout: Sink
   public var stderr: Sink
 
@@ -52,13 +54,14 @@ public struct CLI {
     var home: String
     var isInteractive: Bool
     var interrupt: InterruptFlag
+    var wizardInput: WizardInput
     var stdout: Sink
     var stderr: Sink
   }
 
   /// Commands that exist in the Go CLI but are not in the Swift port yet.
   static let notYetPorted: Set<String> = [
-    "profile", "clone", "repair-clone",
+    "clone", "repair-clone",
   ]
 
   static let globalSpecs: [FlagSpec] = [
@@ -81,6 +84,7 @@ public struct CLI {
       .bool("preserve-boot-state"),
     ],
     "off": [.bool("preserve-boot-state")],
+    "profile": [],
     "top": [.bool("json", onlyOnce: true)],
     "size": [.bool("json", onlyOnce: true)],
     "disk-categories": [.bool("json", onlyOnce: true)],
@@ -175,6 +179,7 @@ public struct CLI {
     let context = Context(
       simctl: simctl, bootTimeout: bootTimeout, parsed: parsed, home: home,
       isInteractive: isInteractive(), interrupt: interrupt,
+      wizardInput: wizardInput ?? .terminal(write: stderr),
       stdout: stdout, stderr: stderr)
 
     switch command {
@@ -191,6 +196,7 @@ public struct CLI {
     case "rename": return try cmdRename(context)
     case "erase": return try cmdErase(context)
     case "delete": return try cmdDelete(context)
+    case "profile": return try cmdProfile(context)
     case "top": return try cmdTop(context)
     case "size": return try cmdSize(context)
     case "disk-categories": return try cmdDiskCategories(context)

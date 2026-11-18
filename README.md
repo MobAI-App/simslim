@@ -50,7 +50,7 @@ cd swift && swift build -c release
 
 It covers `list`, `profiles`, `status`, `verify`, `doctor`, `measure`, `on`,
 `off`, `boot`, `shutdown`, `enable`, `disable`, `watch`, `rename`, `erase`,
-`delete`, `top`, `size`, and the `disk-*` commands. `profile`, `clone`, and
+`delete`, `top`, `size`, `profile`, and the `disk-*` commands. `clone` and
 `repair-clone` are not ported yet and exit with a message saying so. The macOS
 app still bundles the Go CLI until `clone` is ported. `scripts/verify-deps.sh`
 checks that the Swift code imports only Apple system modules, uses no network API, and links

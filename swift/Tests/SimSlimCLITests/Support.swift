@@ -10,7 +10,7 @@ struct CLIResult {
   var stderr: String
 }
 
-private final class Buffer: @unchecked Sendable {
+final class Buffer: @unchecked Sendable {
   private let lock = NSLock()
   private var text = ""
   func append(_ s: String) {

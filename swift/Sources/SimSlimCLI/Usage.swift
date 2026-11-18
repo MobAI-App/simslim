@@ -27,7 +27,7 @@ let usageText = """
         --booted         Only list booted simulators
     profiles [id]        Show the daemon categories a slim boot disables;
                          pass a category ID to list that category's daemons
-    profile [path]   †   Interactively build a --profile JSON file
+    profile [path]       Interactively build a --profile JSON file
     on <udid>            Slim a simulator (persist disables + reboot slim)
     off <udid>           Restore a simulator to stock (re-enable + reboot)
     enable <udid> <ids>     Re-enable categories or daemons on a booted simulator now
