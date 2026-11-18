@@ -160,7 +160,7 @@ These are not in the first release. The SwiftUI app depends on several of them, 
 
 - **M0** Scaffold: package, subprocess layer, dependency gate, `make verify-deps`.
 - **M1** Core model: allowlist, categories, features, delta logic, profile files, with the invariant tests ported first.
-- **M2** simctl and read-only commands: `list`, `profiles`, `status`, `verify`, `doctor`, `measure`.
+- **M2** simctl and read-only commands: `list`, `profiles`, `status`, `verify`, `doctor`, `measure`. **Done** (167 tests; every command checked through a fake host; the app's real `gui/Models.swift` decodes the JSON; `measure` cross-checked against `pgrep`/`ps`/`top` on a real Mac). Not yet run against a live `simctl spawn launchctl` read, which `list`, `status`, `verify` and `doctor` all use.
 - **M3** Slimming: `on`, `off`, `on --no-reboot`, offline fast path, `boot`, `shutdown`, `enable`/`disable`, `--save`.
 - **M4** `watch`.
 - **M5** Integration tests on a throwaway simulator, independent review of the mutating core, and parity run against the Go tool.

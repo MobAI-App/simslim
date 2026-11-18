@@ -48,8 +48,8 @@ ok() { print -- "  ok: $*" }
 section() { print -- "\n[$1]" }
 
 # Modules each tree may import. Everything here ships with Xcode.
-ALLOWED_SOURCES=(Foundation Darwin Dispatch SimSlimKit)
-ALLOWED_TESTS=(Foundation Darwin Dispatch SimSlimKit XCTest Testing)
+ALLOWED_SOURCES=(Foundation Darwin Dispatch SimSlimKit SimSlimCLI)
+ALLOWED_TESTS=(Foundation Darwin Dispatch SimSlimKit SimSlimCLI TestSupport XCTest Testing)
 ALLOWED_GUI=(Foundation AppKit SwiftUI)
 
 # Prints "<file>: <module>" for each import in the given directory.
@@ -234,10 +234,22 @@ if (( CHECK_BINARY )); then
 
     # Behavior check: the binary still works with all network access denied.
     if command -v sandbox-exec >/dev/null 2>&1; then
-      if out="$(sandbox-exec -p '(version 1)(allow default)(deny network*)' "$BIN" --version 2>&1)"; then
+      # Only commands that never touch a simulator are exercised here.
+      sandboxed() { sandbox-exec -p '(version 1)(allow default)(deny network*)' "$BIN" "$@" 2>&1; }
+      if out="$(sandboxed --version)"; then
         ok "runs with network denied: $out"
       else
         fail "binary failed under sandbox-exec with network denied: $out"
+      fi
+      if out="$(sandboxed profiles --json)" && [[ "$out" == *'"id" : "widgets"'* ]]; then
+        ok "profiles --json works with network denied"
+      else
+        fail "profiles --json failed under sandbox-exec with network denied"
+      fi
+      if out="$(sandboxed doctor --list)" && [[ "$out" == *"com.apple.apsd"* ]]; then
+        ok "doctor --list works with network denied"
+      else
+        fail "doctor --list failed under sandbox-exec with network denied"
       fi
     else
       print -- "  skip: sandbox-exec not available"

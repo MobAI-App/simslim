@@ -2,7 +2,7 @@
 import PackageDescription
 
 // No third-party packages, ever. `scripts/verify-deps.sh` fails the check if
-// `dependencies` is anything other than an empty list.
+// the package declares one.
 let package = Package(
   name: "simslim",
   platforms: [.macOS(.v14)],
@@ -11,9 +11,18 @@ let package = Package(
   ],
   dependencies: [],
   targets: [
+    // All logic. Never writes to stdout.
     .target(name: "SimSlimKit"),
-    .executableTarget(name: "simslim", dependencies: ["SimSlimKit"]),
-    .testTarget(name: "SimSlimKitTests", dependencies: ["SimSlimKit"]),
+    // Argument parsing and printing, with injected output and command runner so
+    // every command is testable without a terminal or a simulator.
+    .target(name: "SimSlimCLI", dependencies: ["SimSlimKit"]),
+    // main.swift only.
+    .executableTarget(name: "simslim", dependencies: ["SimSlimCLI", "SimSlimKit"]),
+    // Test-only helpers (a fake simulator host). Not a dependency of any product.
+    .target(name: "TestSupport", dependencies: ["SimSlimKit"], path: "Tests/TestSupport"),
+    .testTarget(name: "SimSlimKitTests", dependencies: ["SimSlimKit", "TestSupport"]),
+    .testTarget(
+      name: "SimSlimCLITests", dependencies: ["SimSlimCLI", "SimSlimKit", "TestSupport"]),
   ],
   swiftLanguageModes: [.v5]
 )
