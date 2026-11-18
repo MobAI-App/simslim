@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 // `enable --save` / `disable --save`: record the change in a profile file, the one

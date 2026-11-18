@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// Shown alongside a category for transparency but never part of a slim

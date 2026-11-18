@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// Every program simslim may start. This is a closed list of absolute paths:

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import TestSupport
 import XCTest
 
@@ -444,7 +446,7 @@ final class WatchTests: XCTestCase {
   }
 
   func testReadDevicePlist() throws {
-    let dir = root + "/dev"
+    let dir = root + "/" + udid(1)
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     for (state, asString, expected) in [
       (1, false, "Shutdown"), (3, false, "Booted"), (1, true, "Shutdown"), (2, true, "Booted"),
@@ -462,8 +464,29 @@ final class WatchTests: XCTestCase {
     }
   }
 
+  func testReadDevicePlistRejectsAUDIDThatIsNotItsDirectory() throws {
+    // The UDID names the disabled-store path, so a traversal string or another
+    // device's UDID in a planted device.plist must never be accepted.
+    let dir = root + "/" + udid(1)
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    for bad in ["x/../../../tmp/evil", "../" + udid(1), udid(2), "not-a-udid"] {
+      try devicePlist(udid: bad, runtime: ios, state: 1)
+        .write(toFile: dir + "/device.plist", atomically: true, encoding: .utf8)
+      XCTAssertThrowsError(try readDevicePlist(DeviceDir(path: dir, set: "default")), bad)
+    }
+    XCTAssertFalse(isUDID("x/../../../tmp/evil"))
+    XCTAssertTrue(isUDID(udid(1)))
+  }
+
+  func testDisabledStoreKeepsAUDIDInsideItsRoot() {
+    let store = DisabledStore(root: "/private/var/tmp")
+    XCTAssertEqual(
+      store.directory(udid: "a/../../b"),
+      "/private/var/tmp/com.apple.CoreSimulator.SimDevice.a_.._.._b")
+  }
+
   func testReadDevicePlistRejectsWhatSimslimDoesNotSlim() throws {
-    let dir = root + "/dev"
+    let dir = root + "/" + udid(1)
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     let cases = [
       devicePlist(

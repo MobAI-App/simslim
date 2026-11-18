@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// A user-facing capability backed by specific launchd daemons. Every label

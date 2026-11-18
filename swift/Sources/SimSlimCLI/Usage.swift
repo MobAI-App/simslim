@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 /// `simslim --help`.
 let usageText = """
   simslim runs more iOS, tvOS, watchOS, and visionOS simulators on the same Mac by disabling the

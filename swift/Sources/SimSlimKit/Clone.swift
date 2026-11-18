@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 // `clone` and `repair-clone`. CoreSimulator's raw clone carries absolute source

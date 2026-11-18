@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 // Disk measurement and the permanent disk cleanup. Deletion is tightly confined:

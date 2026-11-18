@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 import SimSlimKit
 
@@ -38,6 +40,9 @@ func parseGoDuration(_ text: String) throws -> TimeInterval {
     }
     total += value * scale
   }
+  // Go rejects what overflows int64 nanoseconds (about 292 years); an inf or
+  // huge value here would also trap later when converted to an Int.
+  guard total.isFinite, total <= 9_223_372_036.0 else { throw invalid }
   return sign * total
 }
 

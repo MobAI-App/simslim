@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// A simulator. The JSON keys are a contract with the SwiftUI app; `dataPath`

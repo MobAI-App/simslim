@@ -1,4 +1,6 @@
 // swift-tools-version:6.0
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import PackageDescription
 
 // No third-party packages, ever. `scripts/verify-deps.sh` fails the check if

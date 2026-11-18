@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// Go's `%q` (`strconv.Quote`): quote, backslash and the C escapes are

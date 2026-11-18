@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import SimSlimKit
 import XCTest
 
@@ -91,7 +93,10 @@ final class DurationTests: XCTestCase {
   }
 
   func testInvalidDurations() {
-    for text in ["", "abc", "10", "10x", "m10", "1h 30m", ".", "--5s", "5s5"] {
+    for text in [
+      "", "abc", "10", "10x", "m10", "1h 30m", ".", "--5s", "5s5",
+      "9999999999999999999s", String(repeating: "9", count: 400) + "s",
+    ] {
       XCTAssertThrowsError(try parseGoDuration(text), "\"\(text)\"")
     }
     XCTAssertThrowsError(try parseGoDuration("10")) { error in

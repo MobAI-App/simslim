@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 // launchd_sim is a host process, so a simulator's launchd disable overrides are
@@ -10,7 +12,10 @@ struct DisabledStore: Sendable {
   var root: String
 
   func directory(udid: String) -> String {
-    (root as NSString).appendingPathComponent("com.apple.CoreSimulator.SimDevice.\(udid)")
+    // A UDID is one path component; a "/" in it would walk out of the store root.
+    let component = udid.replacingOccurrences(of: "/", with: "_")
+    return (root as NSString).appendingPathComponent(
+      "com.apple.CoreSimulator.SimDevice.\(component)")
   }
 
   func path(udid: String) -> String {

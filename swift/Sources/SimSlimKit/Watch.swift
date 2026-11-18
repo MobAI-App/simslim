@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.
+
 import Foundation
 
 /// How often `watch` rescans the device sets.
@@ -90,6 +92,15 @@ func readDevicePlist(_ dir: DeviceDir) throws -> Device {
     return ""
   }
   let runtime = text("runtime")
+  // device.plist is read from a directory anyone with write access to the set can
+  // create, and the UDID names the store path, so it must be a real UDID and
+  // must be the one the directory is named for.
+  let udid = text("UDID")
+  guard isUDID(udid),
+    udid.caseInsensitiveCompare((dir.path as NSString).lastPathComponent) == .orderedSame
+  else {
+    throw SimSlimError("device.plist UDID does not match its directory")
+  }
   guard let parsed = Simctl.parseRuntime(runtime), !text("UDID").isEmpty else {
     throw SimSlimError("device.plist names no UDID or supported runtime")
   }
@@ -412,4 +423,11 @@ public final class Watcher: @unchecked Sendable {
     guard let report else { return nil }
     return { report("watch: \(udid): \($0)") }
   }
+}
+
+/// Whether `text` has the 8-4-4-4-12 hexadecimal form of a simulator UDID.
+func isUDID(_ text: String) -> Bool {
+  let groups = text.split(separator: "-", omittingEmptySubsequences: false)
+  guard groups.map(\.count) == [8, 4, 4, 4, 12] else { return false }
+  return groups.allSatisfy { $0.allSatisfy { $0.isASCII && $0.isHexDigit } }
 }
