@@ -285,4 +285,45 @@ extension CLI {
       )
     }
   }
+
+  // MARK: - rename / erase / delete
+
+  func cmdRename(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let args = context.parsed.positionals
+    guard args.count == 2 else {
+      throw SimSlimError("rename expects a simulator UDID and a new name")
+    }
+    let name = try normalizeSimulatorName(args[1])
+    try bounded(context.simctl, by: Simctl.shutdownTimeout).renameDevice(udid: args[0], name: name)
+    if json {
+      context.stdout(
+        try jsonText(SimulatorMutationOutput(action: "rename", udid: args[0], name: name)))
+    } else {
+      context.stdout("Renamed \(args[0]) to \(goQuote(name)).\n")
+    }
+    return 0
+  }
+
+  func cmdErase(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let udid = try oneUDID(context.parsed.positionals)
+    try bounded(context.simctl, by: context.bootTimeout).eraseDevice(udid: udid)
+    context.stdout(
+      json
+        ? try jsonText(SimulatorMutationOutput(action: "erase", udid: udid))
+        : "Erased simulator \(udid).\n")
+    return 0
+  }
+
+  func cmdDelete(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let udid = try oneUDID(context.parsed.positionals)
+    try bounded(context.simctl, by: context.bootTimeout).deleteDevice(udid: udid)
+    context.stdout(
+      json
+        ? try jsonText(SimulatorMutationOutput(action: "delete", udid: udid))
+        : "Deleted simulator \(udid).\n")
+    return 0
+  }
 }

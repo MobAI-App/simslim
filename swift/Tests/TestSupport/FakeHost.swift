@@ -71,6 +71,8 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   /// Fails `simctl bootstatus` but leaves the device Booted, as a boot that
   /// started and never became ready.
   public var bootstatusFailure: String?
+  /// Fails `simctl rename` / `erase` / `delete` with this stderr when set.
+  public var managementFailure: String?
   /// Makes the device ignore shutdown, to exercise the shutdown timeout.
   public var stuckBooted = false
   /// Called at the start of every command, with the arguments; lets a test
@@ -149,6 +151,23 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     return true
   }
 
+  private func withDevice(_ udid: String, token: String, _ change: (inout FakeDevice) -> Void)
+    -> CommandResult
+  {
+    if token.isEmpty {
+      guard let i = devices.firstIndex(where: { $0.udid == udid }) else {
+        return failure("Invalid device")
+      }
+      change(&devices[i])
+    } else {
+      guard let i = sets[token]?.firstIndex(where: { $0.udid == udid }) else {
+        return failure("Invalid device")
+      }
+      change(&sets[token]![i])
+    }
+    return CommandResult(status: 0)
+  }
+
   private func stateOf(_ udid: String, token: String) -> String? {
     (token.isEmpty ? devices : sets[token] ?? []).first { $0.udid == udid }?.state
   }
@@ -210,6 +229,40 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
           status: 149, stderr: Data("Unable to shutdown device in current state: Shutdown".utf8))
       }
       if !stuckBooted { _ = setState(udid, "Shutdown", token: token) }
+      return CommandResult(status: 0)
+    case "rename" where rest.count == 3:
+      if let managementFailure {
+        return CommandResult(status: 1, stderr: Data(managementFailure.utf8))
+      }
+      guard stateOf(rest[1], token: token) != nil else {
+        return failure("Invalid device: \(rest[1])")
+      }
+      return withDevice(rest[1], token: token) { $0.name = rest[2] }
+    case "erase" where rest.count == 2:
+      if let managementFailure {
+        return CommandResult(status: 1, stderr: Data(managementFailure.utf8))
+      }
+      guard let state = stateOf(rest[1], token: token) else {
+        return failure("Invalid device: \(rest[1])")
+      }
+      if state != "Shutdown" {
+        return CommandResult(
+          status: 164,
+          stderr: Data("Unable to erase contents and settings in current state: \(state)".utf8))
+      }
+      return CommandResult(status: 0)
+    case "delete" where rest.count == 2:
+      if let managementFailure {
+        return CommandResult(status: 1, stderr: Data(managementFailure.utf8))
+      }
+      guard stateOf(rest[1], token: token) != nil else {
+        return failure("Invalid device: \(rest[1])")
+      }
+      if token.isEmpty {
+        devices.removeAll { $0.udid == rest[1] }
+      } else {
+        sets[token]?.removeAll { $0.udid == rest[1] }
+      }
       return CommandResult(status: 0)
     case "list" where rest == ["list", "runtimes", "-j"]:
       let runtimes = runtimeRoots.map { ["identifier": $0.key, "runtimeRoot": $0.value] }

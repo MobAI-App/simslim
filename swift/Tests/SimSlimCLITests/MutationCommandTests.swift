@@ -157,7 +157,7 @@ final class MutationCommandTests: XCTestCase {
     XCTAssertEqual(r.status, 1)
     XCTAssertTrue(
       r.stderr.hasSuffix(
-        "simslim: simctl bootstatus: exit status 1: boot never ready; additionally could not "
+        "simslim: xcrun simctl bootstatus \(udid) -b: exit status 1: boot never ready; additionally could not "
           + "restore original shutdown state: restore original shutdown state: "
           + "simctl shutdown: exit status 1: shutdown refused\n"), r.stderr)
   }
