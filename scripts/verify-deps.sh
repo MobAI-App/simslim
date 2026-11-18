@@ -58,7 +58,7 @@ list_imports() {
   [[ -d "$dir" ]] || return 0
   find "$dir" -name '*.swift' -not -path '*/.build/*' | sort | while read -r file; do
     awk -v f="${file#$ROOT_DIR/}" '
-      /^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*((public|internal|package)[[:space:]]+)?import[[:space:]]/ {
+      /^[[:space:]]*(@[A-Za-z_]+(\([^)]*\))?[[:space:]]+)*((public|internal|package|private|fileprivate)[[:space:]]+)?import[[:space:]]/ {
         n = split($0, w, /[[:space:]]+/)
         for (i = 1; i <= n; i++) if (w[i] == "import") { j = i + 1; break }
         if (w[j] ~ /^(struct|class|enum|protocol|typealias|func|var|let)$/) j++
@@ -100,13 +100,24 @@ PKG="$SWIFT_DIR/Package.swift"
 if [[ ! -f "$PKG" ]]; then
   fail "missing $PKG"
 else
-  pkg_hits="$(hits -nE '\.package\(|\.binaryTarget|\.plugin|\.systemLibrary' "$PKG")"
+  pkg_hits="$(hits -nE '\.package\(|\.binaryTarget|\.plugin|\.systemLibrary|unsafeFlags|cSettings|cxxSettings|linkerSettings|path:[[:space:]]*"(\.\.|/)' "$PKG")"
   if [[ -n "$pkg_hits" ]]; then
     print -u2 -- "$pkg_hits"
     fail "Package.swift declares a package, binary target, plugin, or system library"
   else
     ok "Package.swift declares no packages, binary targets, or plugins"
   fi
+fi
+# Only Swift may be compiled: a C/ObjC/C++ target would escape every Swift-only check.
+foreign="$(find "$SWIFT_DIR" -path "$SWIFT_DIR/.build" -prune -o -type f \
+  \( -name '*.c' -o -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.cpp' -o -name '*.cc' \
+     -o -name '*.hpp' -o -name '*.s' -o -name '*.S' -o -name '*.modulemap' -o -name '*.a' \
+     -o -name '*.dylib' -o -name '*.framework' -o -name '*.xcframework' \) -print)"
+if [[ -n "$foreign" ]]; then
+  print -u2 -- "$foreign"
+  fail "non-Swift source or binary under swift/ (above)"
+else
+  ok "swift/ contains only Swift sources"
 fi
 artifacts_ok=1
 for artifact in "$SWIFT_DIR/Package.resolved" "$SWIFT_DIR/Packages" "$SWIFT_DIR/vendor" \
@@ -129,7 +140,11 @@ check_imports "gui" "$GUI_DIR" "${ALLOWED_GUI[@]}"
 # ---------------------------------------------------------------- 3 network
 section "3. No network APIs in source"
 NET_PATTERN='URLSession|URLRequest|NSURLConnection|NWConnection|NWListener|NWPathMonitor|CFNetwork|CFSocket|CFStream|InputStream|OutputStream|WKWebView|getaddrinfo|socket\(|connect\(|URL\(string:|http://|https://|ftp://'
-net_hits="$(hits -rnE "$NET_PATTERN" "$SWIFT_DIR/Sources" "$GUI_DIR" --include='*.swift')"
+# The one allowed URL is the plist DOCTYPE's public identifier: a fixed string
+# written into a file, never opened. Anything else with a scheme still fails.
+APPLE_DTD='http://www.apple.com/DTDs/PropertyList-1.0.dtd'
+net_hits="$(hits -rnE "$NET_PATTERN" "$SWIFT_DIR/Sources" "$GUI_DIR" --include='*.swift' \
+  | grep -vF "$APPLE_DTD" || true)"
 if [[ -n "$net_hits" ]]; then
   print -u2 -- "$net_hits"
   fail "network-capable API or URL found in source (above)"
@@ -151,23 +166,26 @@ fi
 # ---------------------------------------------------------------- 4 subprocess
 section "4. Subprocesses go through Subprocess.swift only"
 SUBPROC="$SWIFT_DIR/Sources/SimSlimKit/Subprocess.swift"
-spawn_hits="$(hits -rnE '\bProcess\(|NSTask|posix_spawn|\bpopen\(|\bsystem\(|\bexecv|\bfork\(|/bin/(ba|z)?sh' \
-  "$SWIFT_DIR/Sources" --include='*.swift' --exclude=Subprocess.swift)"
+# Only the one real Subprocess.swift is exempt, never a same-named file elsewhere.
+outside_subproc() { grep -vF "$SUBPROC:" || true; }
+spawn_hits="$(hits -rnE '\bProcess[[:space:]]*(\(|\.run)|NSTask|NSUserUnixTask|posix_spawn|\bpopen\(|\bsystem\(|\bexecv|\bfork\(|/bin/(ba|z)?sh' \
+  "$SWIFT_DIR/Sources" --include='*.swift' | outside_subproc)"
 if [[ -n "$spawn_hits" ]]; then
   print -u2 -- "$spawn_hits"
   fail "process spawning outside Subprocess.swift (above)"
 else
   ok "Process/posix_spawn/popen/system only in Subprocess.swift"
 fi
-path_hits="$(hits -rnE '"/(usr/(s)?bin|bin|sbin|opt|Applications)/' "$SWIFT_DIR/Sources" --include='*.swift' \
-  --exclude=Subprocess.swift)"
+path_hits="$(hits -rnE '"/(usr/(s)?bin|bin|sbin|opt|Applications|Library|System)/' "$SWIFT_DIR/Sources" --include='*.swift' \
+  | outside_subproc)"
 if [[ -n "$path_hits" ]]; then
   print -u2 -- "$path_hits"
   fail "hard-coded executable path outside Subprocess.swift (above)"
 else
   ok "no executable paths outside the Executable enum"
 fi
-if [[ -n "$(hits -nE 'getenv|environment\[|\.environment|/usr/bin/env|"PATH"' "$SUBPROC")" ]]; then
+env_hits="$(hits -nE 'getenv|environment\[|\.environment|/usr/bin/env|"PATH"' "$SUBPROC")"
+if [[ -n "$env_hits" ]]; then
   fail "Subprocess.swift reads the environment or PATH"
 else
   ok "Subprocess.swift reads no environment and does no PATH lookup"
@@ -216,7 +234,7 @@ if (( CHECK_BINARY )); then
     fi
 
     # Undefined symbols that would indicate networking.
-    NET_SYMBOLS='NSURLSession|NSURLConnection|CFNetwork|nw_connection|nw_listener|_getaddrinfo|_socket$|_connect$'
+    NET_SYMBOLS='NSURLSession|NSURLConnection|CFNetwork|nw_connection|nw_listener|_getaddrinfo|_gethostbyname|_getifaddrs|_sendto|_socket$|_connect$|_bind$'
     net_syms="$(nm -u "$BIN" | hits -E "$NET_SYMBOLS")"
     if [[ -n "$net_syms" ]]; then
       print -u2 -- "$net_syms"
@@ -226,7 +244,8 @@ if (( CHECK_BINARY )); then
     fi
 
     # Test-only hooks must never ship. By convention they are named SIMSLIM_TEST_*.
-    if [[ -n "$(strings -a "$BIN" | hits 'SIMSLIM_TEST_')" ]]; then
+    test_hooks="$(strings -a "$BIN" | hits 'SIMSLIM_TEST_')"
+    if [[ -n "$test_hooks" ]]; then
       fail "release binary contains a SIMSLIM_TEST_ hook"
     else
       ok "no SIMSLIM_TEST_ hooks in the release binary"

@@ -22,9 +22,38 @@ public struct Simctl: Sendable {
   /// spawns for a few seconds (error 124, "Domain is tearing down").
   public var retryDelays: [TimeInterval] = [1, 2, 4, 8]
   public var sleep: @Sendable (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+  /// Where launchd_sim keeps each device's disable overrides (a test redirects it).
+  public var storeRoot = "/private/var/tmp"
+  /// An overall bound for the operation in progress, standing in for Go's context
+  /// deadline: every command is capped to what is left of it, and nothing starts
+  /// once it has passed.
+  public var deadline: Date?
+  /// The clock the deadline is read from (a test replaces it).
+  public var now: @Sendable () -> Date = { Date() }
 
   public init(runner: CommandRunning = SystemCommandRunner()) {
     self.runner = runner
+  }
+
+  // MARK: - Running commands
+
+  var deadlineExpired: Bool { deadline.map { now() >= $0 } ?? false }
+
+  /// Runs a command under the operation deadline. The per-call `timeout` is
+  /// capped to what is left of the deadline; a command killed by the deadline
+  /// (rather than by its own `timeout`) is an error.
+  func exec(_ executable: Executable, _ arguments: [String], timeout: TimeInterval? = nil) throws
+    -> CommandResult
+  {
+    var limit = timeout
+    if let deadline {
+      let left = deadline.timeIntervalSince(now())
+      if left <= 0 { throw SimSlimError("context deadline exceeded") }
+      limit = min(limit ?? left, left)
+    }
+    let result = try runner.run(executable, arguments, timeout: limit)
+    if result.timedOut, deadlineExpired { throw SimSlimError("context deadline exceeded") }
+    return result
   }
 
   // MARK: - Device sets
@@ -71,7 +100,7 @@ public struct Simctl: Sendable {
     let args = Simctl.simctlArgs(token: set.token, ["list", "devices", "-j"])
     let result: CommandResult
     do {
-      result = try runner.run(.xcrun, args)
+      result = try exec(.xcrun, args)
     } catch {
       throw SimSlimError("simctl list: \(error.localizedDescription)")
     }
@@ -181,7 +210,7 @@ public struct Simctl: Sendable {
     while true {
       let result: CommandResult
       do {
-        result = try runner.run(.xcrun, arguments, timeout: spawnTimeout)
+        result = try exec(.xcrun, arguments, timeout: spawnTimeout)
       } catch {
         throw SimSlimError("launchctl \(args[0]): \(error.localizedDescription)")
       }
@@ -192,7 +221,9 @@ public struct Simctl: Sendable {
         ? "timed out after \(Int(spawnTimeout))s" : "exit status \(result.status)"
       let message = "launchctl \(args[0]): \(reason): \(result.combinedText)"
       let settling = Simctl.launchdSettling(result) || result.timedOut
-      if !settling || attempt >= retryDelays.count { throw SimSlimError(message) }
+      if !settling || attempt >= retryDelays.count || deadlineExpired {
+        throw SimSlimError(message)
+      }
       sleep(retryDelays[attempt])
       attempt += 1
     }
@@ -210,7 +241,7 @@ public struct Simctl: Sendable {
   /// `"com.apple.x" => disabled`; older builds print `=> true` / `=> false`.
   static func parseDisabled(_ output: String) -> Set<String> {
     var set = Set<String>()
-    for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+    for line in output.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline }) {
       guard let open = line.firstIndex(of: "\"") else { continue }
       let rest = line[line.index(after: open)...]
       guard let close = rest.firstIndex(of: "\"") else { continue }

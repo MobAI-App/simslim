@@ -48,6 +48,32 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   /// When set, `simctl list` for the default set fails with this stderr.
   public var listFailure: String?
 
+  // MARK: Mutable simulator behaviour
+
+  /// Directory standing in for /private/var/tmp: a boot reads
+  /// `com.apple.CoreSimulator.SimDevice.<udid>/disabled.plist` from it.
+  public var storeRoot: String?
+  /// Whether a boot honours that file (a runtime may ignore it).
+  public var honoursStore = true
+  /// Whether disable overrides survive a shutdown (iOS before 18.5 forgets them).
+  public var persistsOverrides = true
+  /// Labels loaded in each booted simulator's launchd.
+  public var loaded: [String: Set<String>] = [:]
+  /// Job plist path to the Label inside it, as plutil reports it.
+  public var plistLabels: [String: String] = [:]
+  /// runtime identifier to RuntimeRoot, for `simctl list runtimes -j`.
+  public var runtimeRoots: [String: String] = [:]
+  /// Decides a failure for a transition: (verb, label) -> result, or nil to succeed.
+  public var failTransition: (@Sendable (String, String) -> CommandResult?)?
+  /// Fails `simctl boot` / `shutdown` / `bootstatus` with this stderr when set.
+  public var bootFailure: String?
+  public var shutdownFailure: String?
+  /// Makes the device ignore shutdown, to exercise the shutdown timeout.
+  public var stuckBooted = false
+  /// Called at the start of every command, with the arguments; lets a test
+  /// observe ordering or inject behaviour.
+  public var onCall: (@Sendable (Executable, [String]) -> Void)?
+
   public init(devices: [FakeDevice] = []) {
     self.devices = devices
   }
@@ -72,8 +98,10 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     lock.lock()
     _calls.append(Call(executable: executable, arguments: arguments, timeout: timeout))
     lock.unlock()
+    onCall?(executable, arguments)
 
     switch executable {
+    case .plutil: return plutil(arguments)
     case .xcrun: return xcrun(arguments)
     case .pgrep: return pgrep(arguments)
     case .ps: return CommandResult(status: 0, stdout: Data(psOutput.utf8))
@@ -100,7 +128,132 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     {
       return printDisabled(udid: rest[1])
     }
+    if let result = mutating(rest) { return result }
     return failure("FakeHost: unhandled simctl \(rest)")
+  }
+
+  // MARK: - State changes
+
+  private func setState(_ udid: String, _ state: String) -> Bool {
+    if let i = devices.firstIndex(where: { $0.udid == udid }) {
+      devices[i].state = state
+      return true
+    }
+    for (token, list) in sets {
+      if let i = list.firstIndex(where: { $0.udid == udid }) {
+        sets[token]![i].state = state
+        return true
+      }
+    }
+    return false
+  }
+
+  private func stateOf(_ udid: String) -> String? {
+    (devices + sets.values.flatMap { $0 }).first { $0.udid == udid }?.state
+  }
+
+  private func storeDisabled(_ udid: String) -> Set<String> {
+    guard let storeRoot else { return [] }
+    let path = "\(storeRoot)/com.apple.CoreSimulator.SimDevice.\(udid)/disabled.plist"
+    guard let data = FileManager.default.contents(atPath: path),
+      let object = try? PropertyListSerialization.propertyList(
+        from: data, options: [], format: nil),
+      let dict = object as? [String: Bool]
+    else { return [] }
+    return Set(dict.filter { $0.value }.keys)
+  }
+
+  private func mutating(_ rest: [String]) -> CommandResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let verb = rest.first else { return nil }
+    switch verb {
+    case "boot" where rest.count == 2:
+      let udid = rest[1]
+      if let bootFailure { return CommandResult(status: 1, stderr: Data(bootFailure.utf8)) }
+      guard let state = stateOf(udid) else { return failure("Invalid device: \(udid)") }
+      if state == "Booted" {
+        return CommandResult(
+          status: 149, stderr: Data("Unable to boot device in current state: Booted".utf8))
+      }
+      _ = setState(udid, "Booted")
+      var live = persistsOverrides ? (disabled[udid] ?? []) : []
+      if honoursStore { live.formUnion(storeDisabled(udid)) }
+      disabled[udid] = live
+      loaded[udid] = loaded[udid] ?? Self.defaultLoaded
+      loaded[udid]!.subtract(live)
+      return CommandResult(status: 0)
+    case "bootstatus" where rest.count == 3:
+      return stateOf(rest[1]) == "Booted"
+        ? CommandResult(status: 0) : CommandResult(status: 1, stderr: Data("not booted".utf8))
+    case "shutdown" where rest.count == 2:
+      let udid = rest[1]
+      if let shutdownFailure { return CommandResult(status: 1, stderr: Data(shutdownFailure.utf8)) }
+      guard let state = stateOf(udid) else { return failure("Invalid device: \(udid)") }
+      if state != "Booted" {
+        return CommandResult(
+          status: 149, stderr: Data("Unable to shutdown device in current state: Shutdown".utf8))
+      }
+      if !stuckBooted { _ = setState(udid, "Shutdown") }
+      return CommandResult(status: 0)
+    case "list" where rest == ["list", "runtimes", "-j"]:
+      let runtimes = runtimeRoots.map { ["identifier": $0.key, "runtimeRoot": $0.value] }
+      let data = try! JSONSerialization.data(withJSONObject: ["runtimes": runtimes])
+      return CommandResult(status: 0, stdout: data)
+    case "spawn" where rest.count >= 4 && rest[2] == "launchctl":
+      return launchctl(udid: rest[1], Array(rest.dropFirst(3)))
+    default:
+      return nil
+    }
+  }
+
+  /// Labels loaded in a freshly booted simulator.
+  public static var defaultLoaded: Set<String> { [] }
+
+  private func launchctl(udid: String, _ args: [String]) -> CommandResult? {
+    guard stateOf(udid) == "Booted" else {
+      return CommandResult(status: 1, stderr: Data("Unable to spawn: not booted".utf8))
+    }
+    switch args[0] {
+    case "list":
+      var text = "PID\tStatus\tLabel\n"
+      for label in (loaded[udid] ?? []).sorted() { text += "-\t0\t\(label)\n" }
+      return CommandResult(status: 0, stdout: Data(text.utf8))
+    case "disable", "enable", "bootout":
+      guard args.count == 2, args[1].hasPrefix("system/") else { return nil }
+      let label = String(args[1].dropFirst("system/".count))
+      if let fail = failTransition?(args[0], label) { return fail }
+      switch args[0] {
+      case "disable": disabled[udid, default: []].insert(label)
+      case "enable": disabled[udid, default: []].remove(label)
+      default:
+        if loaded[udid]?.remove(label) == nil {
+          return CommandResult(status: 3, stderr: Data("No such process".utf8))
+        }
+      }
+      return CommandResult(status: 0)
+    case "unload" where args.count >= 3 && args[1] == "-w":
+      for path in args.dropFirst(2) {
+        guard let label = plistLabels[path] else { continue }
+        if let fail = failTransition?("unload", label) {
+          _ = fail
+          continue
+        }
+        disabled[udid, default: []].insert(label)
+        loaded[udid]?.remove(label)
+      }
+      return CommandResult(status: 0)
+    default:
+      return nil
+    }
+  }
+
+  private func plutil(_ args: [String]) -> CommandResult {
+    // plutil -extract Label raw -o - <path>
+    guard args.count == 6, let label = plistLabels[args[5]] else {
+      return CommandResult(status: 1, stderr: Data("plutil: no such file".utf8))
+    }
+    return CommandResult(status: 0, stdout: Data((label + "\n").utf8))
   }
 
   private func list(token: String) -> CommandResult {

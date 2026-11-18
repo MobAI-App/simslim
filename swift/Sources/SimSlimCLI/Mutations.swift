@@ -1,0 +1,203 @@
+import Foundation
+import SimSlimKit
+
+// The commands that change simulator state. Each resolves the exact device
+// first, so a simctl alias such as `all` can never fan out a boot or a slim.
+
+extension CLI {
+  /// A copy of the simctl handle that gives up `seconds` from now.
+  private func bounded(_ simctl: Simctl, by seconds: TimeInterval) -> Simctl {
+    var copy = simctl
+    copy.deadline = copy.now().addingTimeInterval(seconds)
+    return copy
+  }
+
+  private func progress(_ context: Context) -> Reporter {
+    let stderr = context.stderr
+    return { stderr($0 + "\n") }
+  }
+
+  func cmdBoot(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let udid = try oneUDID(context.parsed.positionals)
+    let device = try context.simctl.findDevice(udid: udid)
+    let result = SimulatorMutationOutput(action: "boot", udid: udid)
+    if device.state == "Booted" {
+      if json {
+        context.stdout(try jsonText(result))
+      } else {
+        context.stdout("Simulator \(udid) is already booted.\n")
+      }
+      return 0
+    }
+    // Booting and waiting for services can take about a minute. Stderr is quiet
+    // under --json so a consumer reading a combined stream gets clean JSON.
+    if !json { context.stderr("Booting \(udid)...\n") }
+    try bounded(context.simctl, by: context.bootTimeout).bootAndWait(
+      set: device.set, udid: udid)
+    context.stdout(json ? try jsonText(result) : "Booted \(udid).\n")
+    return 0
+  }
+
+  func cmdShutdown(_ context: Context) throws -> Int32 {
+    let json = context.parsed.bool("json")
+    let udid = try oneUDID(context.parsed.positionals)
+    let device = try context.simctl.findDevice(udid: udid)
+    let result = SimulatorMutationOutput(action: "shutdown", udid: udid)
+    if device.state != "Booted" {
+      if json {
+        context.stdout(try jsonText(result))
+      } else {
+        context.stdout("Simulator \(udid) is already shut down.\n")
+      }
+      return 0
+    }
+    try bounded(context.simctl, by: Simctl.shutdownTimeout).shutdownAndWait(
+      set: device.set, udid: udid)
+    context.stdout(json ? try jsonText(result) : "Shut down \(udid).\n")
+    return 0
+  }
+
+  /// Returns a simulator that started shut down to that state.
+  private func returnToShutdown(_ context: Context, set: String, udid: String) throws {
+    do {
+      try context.simctl.shutdownAndWait(set: set, udid: udid)
+    } catch {
+      throw SimSlimError("restore original shutdown state: \(error.localizedDescription)")
+    }
+  }
+
+  /// Runs `operation`, then restores a shut-down state when asked. The restore
+  /// happens even when the operation failed, and both failures are reported.
+  private func withBootStateRestored(
+    _ context: Context, restore: Bool, set: String, udid: String,
+    operation: () throws -> Bool
+  ) throws -> Bool {
+    var changed = false
+    var operationError: Error?
+    do { changed = try operation() } catch { operationError = error }
+    if restore {
+      do {
+        try returnToShutdown(context, set: set, udid: udid)
+      } catch {
+        if let operationError {
+          throw SimSlimError(
+            "\(operationError.localizedDescription); additionally could not restore original shutdown state: \(error.localizedDescription)"
+          )
+        }
+        throw error
+      }
+    }
+    if let operationError { throw operationError }
+    return changed
+  }
+
+  func cmdOn(_ context: Context) throws -> Int32 {
+    let parsed = context.parsed
+    let preserve = parsed.bool("preserve-boot-state")
+    let noReboot = parsed.bool("no-reboot")
+    if noReboot && preserve {
+      throw SimSlimError(
+        "--no-reboot cannot be combined with --preserve-boot-state: shutting the simulator down discards a no-reboot slim"
+      )
+    }
+    let udid = try oneUDID(parsed.positionals)
+    let profile = try buildProfile(
+      profilePath: parsed.string("profile"), except: parsed.string("except"),
+      keep: parsed.string("keep"))
+    // Resolve once: this pins the device's set (routing every simctl call below),
+    // fails fast on an unknown UDID, and says whether to restore a shut-down state.
+    let device = try context.simctl.findDevice(udid: udid)
+    let reporter = progress(context)
+    let simctl = bounded(context.simctl, by: context.bootTimeout)
+    let count = profile.desired(for: device).count
+
+    if noReboot {
+      context.stderr(
+        "Slimming \(udid) for this boot session: stopping \(count) background services without a reboot.\n"
+      )
+      let changed = try simctl.enableSlimNoReboot(
+        set: device.set, udid: udid, profile: profile, reporter: reporter)
+      context.stdout(
+        changed
+          ? "Done. Simulator slimmed for this boot session without a reboot.\n"
+          : "Already slim. Confirmed every profiled daemon is stopped for this boot session.\n")
+      if device.supportsPersistentOverrides {
+        context.stdout(
+          "The disable overrides are also stored, so the next boot should come up slim; `simslim verify` after a reboot confirms it.\n"
+        )
+      } else {
+        context.stdout(
+          "\(device.runtimeName) cannot persist overrides: the simulator returns to stock at its next boot, so re-run this command after every boot.\n"
+        )
+      }
+      return 0
+    }
+
+    let startedShutdown = device.state == "Shutdown"
+    let originallyShutdown = preserve && startedShutdown
+    if startedShutdown {
+      context.stderr(
+        "Slimming \(udid): disabling \(count) background services while it is off, then booting it slim.\n"
+      )
+    } else {
+      context.stderr(
+        "Slimming \(udid): disabling \(count) background services. The simulator will reboot to apply the changes.\n"
+      )
+    }
+    let changed = try withBootStateRestored(
+      context, restore: originallyShutdown, set: device.set, udid: udid
+    ) {
+      try simctl.enableSlim(set: device.set, udid: udid, profile: profile, reporter: reporter)
+    }
+    if changed {
+      if originallyShutdown {
+        context.stdout("Done. Simulator reconfigured slim and returned to shutdown.\n")
+      } else if startedShutdown {
+        context.stdout("Done. Simulator reconfigured slim and booted.\n")
+      } else {
+        context.stdout("Done. Simulator reconfigured and rebooted slim.\n")
+      }
+    } else if originallyShutdown {
+      context.stdout("Already slim. Original shutdown state restored.\n")
+    } else {
+      context.stdout("Already slim. Nothing to change.\n")
+    }
+    return 0
+  }
+
+  func cmdOff(_ context: Context) throws -> Int32 {
+    let preserve = context.parsed.bool("preserve-boot-state")
+    let udid = try oneUDID(context.parsed.positionals)
+    let device = try context.simctl.findDevice(udid: udid)
+    let startedShutdown = device.state == "Shutdown"
+    let originallyShutdown = preserve && startedShutdown
+    if startedShutdown {
+      context.stderr("Restoring \(udid) to stock while it is off, then booting it.\n")
+    } else {
+      context.stderr(
+        "Restoring \(udid) to stock. The simulator will reboot to apply the changes.\n")
+    }
+    let reporter = progress(context)
+    let simctl = bounded(context.simctl, by: context.bootTimeout)
+    let changed = try withBootStateRestored(
+      context, restore: originallyShutdown, set: device.set, udid: udid
+    ) {
+      try simctl.disableSlim(set: device.set, udid: udid, reporter: reporter)
+    }
+    if changed {
+      if originallyShutdown {
+        context.stdout("Done. All daemons re-enabled and simulator returned to shutdown.\n")
+      } else if startedShutdown {
+        context.stdout("Done. All daemons re-enabled and simulator booted.\n")
+      } else {
+        context.stdout("Done. All daemons re-enabled and simulator rebooted.\n")
+      }
+    } else if originallyShutdown {
+      context.stdout("Already stock. Original shutdown state restored.\n")
+    } else {
+      context.stdout("Already stock. Nothing to change.\n")
+    }
+    return 0
+  }
+}

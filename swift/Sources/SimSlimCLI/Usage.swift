@@ -28,8 +28,8 @@ let usageText = """
     profiles [id]        Show the daemon categories a slim boot disables;
                          pass a category ID to list that category's daemons
     profile [path]   †   Interactively build a --profile JSON file
-    on <udid>        †   Slim a simulator (persist disables + reboot slim)
-    off <udid>       †   Restore a simulator to stock (re-enable + reboot)
+    on <udid>            Slim a simulator (persist disables + reboot slim)
+    off <udid>           Restore a simulator to stock (re-enable + reboot)
     enable <udid> <ids>  †  Re-enable categories or daemons on a booted simulator now
     disable <udid> <ids> †  Stop categories or daemons on a booted simulator now
     watch            †   Slim every simulator until Ctrl-C
@@ -56,8 +56,8 @@ let usageText = """
     clone <udid> <name> †  Clone apps, data, settings, and the service profile
     repair-clone <source-udid> <clone-udid> †
     rename <udid> <name> †  Rename a simulator
-    boot <udid>      †   Boot a simulator and wait for its services
-    shutdown <udid>  †   Shut down a booted simulator
+    boot <udid>          Boot a simulator and wait for its services
+    shutdown <udid>      Shut down a booted simulator
     erase <udid>     †   Erase a simulator's apps, data, and settings
     delete <udid>    †   Permanently delete a simulator
         --json           Print machine-readable JSON (also supported by list,

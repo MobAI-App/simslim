@@ -9,6 +9,8 @@ public struct CLI {
   public var version: String
   public var environment: [String: String]
   public var runner: CommandRunning
+  /// Where simulators' launchd disable overrides live on the host; tests redirect it.
+  public var storeRoot: String
   public var stdout: Sink
   public var stderr: Sink
 
@@ -16,12 +18,14 @@ public struct CLI {
     version: String = simslimVersion,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     runner: CommandRunning = SystemCommandRunner(),
+    storeRoot: String = "/private/var/tmp",
     stdout: @escaping Sink,
     stderr: @escaping Sink
   ) {
     self.version = version
     self.environment = environment
     self.runner = runner
+    self.storeRoot = storeRoot
     self.stdout = stdout
     self.stderr = stderr
   }
@@ -37,9 +41,8 @@ public struct CLI {
 
   /// Commands that exist in the Go CLI but are not in the Swift port yet.
   static let notYetPorted: Set<String> = [
-    "profile", "on", "off", "enable", "disable", "watch", "top", "size", "disk-categories",
-    "disk-plan", "disk-clean", "clone", "repair-clone", "rename", "boot", "shutdown", "erase",
-    "delete",
+    "profile", "enable", "disable", "watch", "top", "size", "disk-categories",
+    "disk-plan", "disk-clean", "clone", "repair-clone", "rename", "erase", "delete",
   ]
 
   static let globalSpecs: [FlagSpec] = [
@@ -55,6 +58,13 @@ public struct CLI {
     ],
     "doctor": [.bool("json", onlyOnce: true), .string("requires"), .bool("list")],
     "measure": [.bool("json", onlyOnce: true)],
+    "boot": [.bool("json", onlyOnce: true)],
+    "shutdown": [.bool("json", onlyOnce: true)],
+    "on": [
+      .string("profile"), .string("except"), .string("keep"), .bool("no-reboot"),
+      .bool("preserve-boot-state"),
+    ],
+    "off": [.bool("preserve-boot-state")],
   ]
 
   /// Runs the command line (without the program name) and returns the exit status.
@@ -128,6 +138,7 @@ public struct CLI {
     }
 
     var simctl = Simctl(runner: runner)
+    simctl.storeRoot = storeRoot
     let bootTimeout = try applyGlobalOptions(parsed, to: &simctl)
     let context = Context(
       simctl: simctl, bootTimeout: bootTimeout, parsed: parsed, stdout: stdout, stderr: stderr)
@@ -139,6 +150,10 @@ public struct CLI {
     case "verify": return try cmdVerify(context)
     case "doctor": return try cmdDoctor(context)
     case "measure": return try cmdMeasure(context)
+    case "boot": return try cmdBoot(context)
+    case "shutdown": return try cmdShutdown(context)
+    case "on": return try cmdOn(context)
+    case "off": return try cmdOff(context)
     default: preconditionFailure("command \(command) has specs but no handler")
     }
   }

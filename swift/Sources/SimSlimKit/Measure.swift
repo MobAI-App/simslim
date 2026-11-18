@@ -126,7 +126,7 @@ extension Simctl {
 
   static func parsePS(_ output: String) -> ProcessSnapshot {
     var snapshot = ProcessSnapshot()
-    for line in output.split(separator: "\n") {
+    for line in output.split(whereSeparator: \.isNewline) {
       let fields = line.split(whereSeparator: \.isWhitespace)
       if fields.count < 4 { continue }
       guard let pid = Int(fields[0]), let ppid = Int(fields[1]) else { continue }
@@ -148,7 +148,7 @@ extension Simctl {
   /// or `1234K+`. Anything else (headers, the summary block) is skipped.
   static func parseTopMemory(_ output: String) -> [Int: Int64] {
     var memory: [Int: Int64] = [:]
-    for line in output.split(separator: "\n") {
+    for line in output.split(whereSeparator: \.isNewline) {
       let fields = line.split(whereSeparator: \.isWhitespace)
       guard fields.count >= 2, fields[0].allSatisfy(\.isASCIIDigit), let pid = Int(fields[0]) else {
         continue

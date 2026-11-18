@@ -79,3 +79,36 @@ public struct StatusOutput: Codable, Equatable, Sendable {
     dropped = try c.decodeIfPresent([DroppedCategory].self, forKey: .dropped) ?? []
   }
 }
+
+/// The result of a simulator lifecycle command (`boot`, `shutdown`, ...).
+public struct SimulatorMutationOutput: Codable, Equatable, Sendable {
+  public var action: String
+  public var udid: String
+  public var name: String
+  public var sourceUdid: String
+
+  public init(action: String, udid: String, name: String = "", sourceUdid: String = "") {
+    self.action = action
+    self.udid = udid
+    self.name = name
+    self.sourceUdid = sourceUdid
+  }
+
+  private enum CodingKeys: String, CodingKey { case action, udid, name, sourceUdid }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(action, forKey: .action)
+    try c.encode(udid, forKey: .udid)
+    if !name.isEmpty { try c.encode(name, forKey: .name) }  // Go omitempty
+    if !sourceUdid.isEmpty { try c.encode(sourceUdid, forKey: .sourceUdid) }
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    action = try c.decode(String.self, forKey: .action)
+    udid = try c.decode(String.self, forKey: .udid)
+    name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+    sourceUdid = try c.decodeIfPresent(String.self, forKey: .sourceUdid) ?? ""
+  }
+}
