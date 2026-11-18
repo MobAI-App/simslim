@@ -741,6 +741,11 @@ private struct ProfileSidebar: View {
           Text("Services to keep")
             .font(.headline)
           Spacer()
+          Button("Export…") { exportProfile() }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .disabled(model.categories.isEmpty)
+            .help("Save these services as a profile file for simslim on --profile")
           Button("Full Slim") { model.resetProfile() }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
@@ -870,6 +875,15 @@ private struct ProfileSidebar: View {
       .padding(.horizontal, 4)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+  }
+
+  private func exportProfile() {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.json]
+    panel.nameFieldStringValue = "profile.json"
+    panel.message = "Apply it with simslim on <udid> --profile <file>."
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    model.exportProfile(to: url)
   }
 
   private var stateLegend: some View {

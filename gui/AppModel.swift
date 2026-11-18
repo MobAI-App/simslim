@@ -286,6 +286,31 @@ final class AppModel: ObservableObject {
     keptServiceLabels.removeAll()
   }
 
+  /// The profile Apply would use, as a file `simslim on --profile` reads. A daemon
+  /// a kept category already covers is not listed again in "keep".
+  func profileFileData() throws -> Data {
+    let covered = categories.filter { keptCategoryIDs.contains($0.id) }
+      .reduce(into: Set<String>()) { $0.formUnion($1.labels) }
+    let except = keptCategoryIDs.sorted()
+    let keep = keptServiceLabels.subtracting(covered).sorted()
+    guard !except.isEmpty || !keep.isEmpty else { return Data("{}\n".utf8) }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let profile = SlimProfileFile(
+      except: except.isEmpty ? nil : except, keep: keep.isEmpty ? nil : keep)
+    return try encoder.encode(profile) + Data("\n".utf8)
+  }
+
+  func exportProfile(to url: URL) {
+    do {
+      try profileFileData().write(to: url, options: .atomic)
+      record(.success, "Exported the service profile to \(url.path)")
+    } catch {
+      recordFailure("Profile export failed: \(error.localizedDescription)", present: true)
+    }
+  }
+
   func setDiskCleanupCategory(_ category: DiskCleanupCategory, selected: Bool) {
     guard category.canClean else { return }
     if selected {
