@@ -182,7 +182,8 @@ extension Simctl {
     default: break
     }
     guard let value = Double(s) else { return 0 }
-    return Int64(value * multiplier)
+    // Int64(_:) traps on overflow and NaN; an unparseable size is 0.
+    return Int64(exactly: (value * multiplier).rounded(.towardZero)) ?? 0
   }
 }
 

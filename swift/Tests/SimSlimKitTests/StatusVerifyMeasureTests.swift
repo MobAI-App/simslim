@@ -141,7 +141,7 @@ final class MeasureTests: XCTestCase {
     let cases: [(String, Int64)] = [
       ("45M", 45 * 1_048_576), ("45M+", 45 * 1_048_576), ("45M-", 45 * 1_048_576),
       ("1.5G", 1_610_612_736), ("900K", 900 * 1024), ("12B", 12), ("12", 12), ("0", 0),
-      ("", 0), ("+", 0), ("abc", 0), ("1.5.2M", 0),
+      ("", 0), ("+", 0), ("abc", 0), ("1.5.2M", 0), ("1e30", 0), ("1e30G", 0), ("1e400", 0),
     ]
     for (text, expected) in cases {
       XCTAssertEqual(Simctl.parseBytes(text), expected, "parseBytes(\"\(text)\")")
