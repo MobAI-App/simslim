@@ -31,24 +31,8 @@ final class DispatchTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("COMMANDS"))
   }
 
-  func testNotYetPortedCommandsSaySoAndTouchNothing() {
-    let host = standardHost()
-    for command in CLI.notYetPorted.sorted() {
-      let result = runCLI([command, bootedUDID], host: host)
-      XCTAssertEqual(result.status, 1, command)
-      XCTAssertEqual(
-        result.stderr,
-        "simslim: \"\(command)\" is not available in the Swift port yet; use the Go CLI for it\n")
-      XCTAssertEqual(result.stdout, "", command)
-    }
-    XCTAssertTrue(host.calls.isEmpty, "a command that is not ported must not run anything")
-  }
-
-  func testEveryUsageCommandIsEitherPortedOrMarked() {
-    // The help text and the dispatcher must agree about what exists.
-    let marked = usageText.split(separator: "\n").filter { $0.contains("†") }.count
-    // `repair-clone` is marked on a line of its own, so allow one fewer.
-    XCTAssertGreaterThanOrEqual(marked, CLI.notYetPorted.count - 1)
+  func testEveryDispatchedCommandIsInTheUsageText() {
+    XCTAssertFalse(usageText.contains("†"), "no command is left unported")
     for command in CLI.commandSpecs.keys {
       XCTAssertTrue(usageText.contains("  \(command)"), "\(command) is missing from the usage text")
     }

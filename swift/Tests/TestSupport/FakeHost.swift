@@ -81,6 +81,16 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   public var duKiB: [String: Int] = [:]
   /// Fails `simctl rename` / `erase` / `delete` with this stderr when set.
   public var managementFailure: String?
+  /// UDIDs `simctl clone` hands out, in order.
+  public var cloneUDIDs: [String] = []
+  /// Fails `simctl clone` with this stderr when set.
+  public var cloneFailure: String?
+  /// Makes `simctl clone` put the new device in this set instead of the source's.
+  public var cloneIntoSet: String?
+  /// Replaces what `simctl clone` prints, to exercise a malformed answer.
+  public var cloneOutput: String?
+  /// Answers `lsof -p <pids>`; nil gives each pid one harmless open file.
+  public var lsofResult: (@Sendable ([Int]) -> CommandResult)?
   /// Makes the device ignore shutdown, to exercise the shutdown timeout.
   public var stuckBooted = false
   /// Called at the start of every command, with the arguments; lets a test
@@ -119,6 +129,11 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     case .pgrep: return pgrep(arguments)
     case .ps: return CommandResult(status: 0, stdout: Data(psOutput.utf8))
     case .top: return CommandResult(status: 0, stdout: Data(topOutput.utf8))
+    case .lsof:
+      let pids = (arguments.last ?? "").split(separator: ",").compactMap { Int($0) }
+      if let lsofResult { return lsofResult(pids) }
+      let text = pids.map { "p\($0)\nn/dev/null\n" }.joined()
+      return CommandResult(status: 0, stdout: Data(text.utf8))
     case .du:
       guard arguments.count == 2, arguments[0] == "-sk", let kib = duKiB[arguments[1]] else {
         return CommandResult(
@@ -278,6 +293,29 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
         sets[token]?.removeAll { $0.udid == rest[1] }
       }
       return CommandResult(status: 0)
+    case "clone" where rest.count == 3:
+      if let cloneFailure { return CommandResult(status: 1, stderr: Data(cloneFailure.utf8)) }
+      guard let source = deviceNamed(rest[1], token: token) else {
+        return failure("Invalid device: \(rest[1])")
+      }
+      guard !cloneUDIDs.isEmpty else { return failure("no clone UDID queued") }
+      let udid = cloneUDIDs.removeFirst()
+      var copy = source
+      copy.udid = udid
+      copy.name = rest[2]
+      copy.state = "Shutdown"
+      if let cloneIntoSet {
+        sets[cloneIntoSet, default: []].append(copy)
+      } else if token.isEmpty {
+        devices.append(copy)
+      } else {
+        sets[token, default: []].append(copy)
+      }
+      if let dataRoot {
+        try? FileManager.default.copyItem(
+          atPath: "\(dataRoot)/\(source.udid)", toPath: "\(dataRoot)/\(udid)")
+      }
+      return CommandResult(status: 0, stdout: Data((cloneOutput ?? udid + "\n").utf8))
     case "list" where rest == ["list", "runtimes", "-j"]:
       let runtimes = runtimeRoots.map { ["identifier": $0.key, "runtimeRoot": $0.value] }
       let data = try! JSONSerialization.data(withJSONObject: ["runtimes": runtimes])
@@ -343,6 +381,10 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     default:
       return nil
     }
+  }
+
+  private func deviceNamed(_ udid: String, token: String) -> FakeDevice? {
+    (token.isEmpty ? devices : (sets[token] ?? [])).first { $0.udid == udid }
   }
 
   private func plutil(_ args: [String]) -> CommandResult {

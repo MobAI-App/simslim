@@ -28,12 +28,13 @@ final class Buffer: @unchecked Sendable {
 /// Runs the CLI against a fake host, capturing both streams.
 func runCLI(
   _ arguments: [String], host: FakeHost = FakeHost(), environment: [String: String] = [:],
-  storeRoot: String = "/nonexistent/simslim-tests"
+  storeRoot: String = "/nonexistent/simslim-tests", home: String = "/nonexistent/simslim-home"
 ) -> CLIResult {
   let out = Buffer()
   let err = Buffer()
   let cli = CLI(
     version: "test-version", environment: environment, runner: host, storeRoot: storeRoot,
+    home: home,
     stdout: { out.append($0) }, stderr: { err.append($0) })
   let status = cli.run(arguments)
   return CLIResult(status: status, stdout: out.value, stderr: err.value)

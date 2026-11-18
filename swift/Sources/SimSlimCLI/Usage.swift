@@ -1,10 +1,7 @@
-/// `simslim --help`. Commands marked † exist in the Go CLI but are not in the
-/// Swift port yet.
+/// `simslim --help`.
 let usageText = """
   simslim runs more iOS, tvOS, watchOS, and visionOS simulators on the same Mac by disabling the
   background daemons a simulator does not need.
-
-  This is the Swift port. Commands marked † are not available yet.
 
   USAGE
     simslim <command> [args]
@@ -53,15 +50,17 @@ let usageText = """
     disk-categories      Show cleanup and protected system-asset categories
     disk-plan <udid>     Measure reclaimable and stored data without deleting
     disk-clean <udid>    Permanently delete selected per-device data
-    clone <udid> <name> †  Clone apps, data, settings, and the service profile
-    repair-clone <source-udid> <clone-udid> †
+    clone <udid> <name>  Clone apps, data, settings, and the service profile
+    repair-clone <source-udid> <clone-udid>
+                         Repair source-bound state in an existing clone
     rename <udid> <name> Rename a simulator
     boot <udid>          Boot a simulator and wait for its services
     shutdown <udid>      Shut down a booted simulator
     erase <udid>         Erase a simulator's apps, data, and settings
     delete <udid>        Permanently delete a simulator
         --json           Print machine-readable JSON (also supported by list,
-                         profiles, status, verify, doctor)
+                         profiles, status, verify, doctor, enable, disable, and
+                         simulator-management commands)
     version              Print the version
 
   A `--profile` file is JSON you commit alongside your project and apply per run

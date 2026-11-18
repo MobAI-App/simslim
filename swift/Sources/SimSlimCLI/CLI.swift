@@ -59,11 +59,6 @@ public struct CLI {
     var stderr: Sink
   }
 
-  /// Commands that exist in the Go CLI but are not in the Swift port yet.
-  static let notYetPorted: Set<String> = [
-    "clone", "repair-clone",
-  ]
-
   static let globalSpecs: [FlagSpec] = [
     .string("set"), .string("boot-timeout"), .string("spawn-timeout"),
   ]
@@ -85,6 +80,8 @@ public struct CLI {
     ],
     "off": [.bool("preserve-boot-state")],
     "profile": [],
+    "clone": [.bool("json", onlyOnce: true)],
+    "repair-clone": [.bool("json", onlyOnce: true)],
     "top": [.bool("json", onlyOnce: true)],
     "size": [.bool("json", onlyOnce: true)],
     "disk-categories": [.bool("json", onlyOnce: true)],
@@ -156,10 +153,6 @@ public struct CLI {
     let command = arguments[index]
     let rest = leading + Array(arguments[(index + 1)...])
 
-    if CLI.notYetPorted.contains(command) {
-      throw SimSlimError(
-        "\"\(command)\" is not available in the Swift port yet; use the Go CLI for it")
-    }
     guard let specs = CLI.commandSpecs[command] else {
       stderr("unknown command \"\(command)\"\n\n")
       stdout(usageText)
@@ -193,6 +186,8 @@ public struct CLI {
     case "shutdown": return try cmdShutdown(context)
     case "on": return try cmdOn(context)
     case "off": return try cmdOff(context)
+    case "clone": return try cmdClone(context)
+    case "repair-clone": return try cmdRepairClone(context)
     case "rename": return try cmdRename(context)
     case "erase": return try cmdErase(context)
     case "delete": return try cmdDelete(context)

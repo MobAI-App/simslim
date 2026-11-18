@@ -257,7 +257,7 @@ func requireResolvedDescendant(_ root: String, _ target: String) throws {
   }
 }
 
-private func join(_ directory: String, _ name: String) -> String {
+func join(_ directory: String, _ name: String) -> String {
   directory.hasSuffix("/") ? directory + name : directory + "/" + name
 }
 
@@ -267,9 +267,9 @@ private func join(_ root: String, _ names: String...) -> String {
 
 // MARK: - Walking
 
-private enum WalkStep { case descend, skip }
+enum WalkStep { case descend, skip }
 
-private func lstatInfo(_ path: String) throws -> stat {
+func lstatInfo(_ path: String) throws -> stat {
   var info = stat()
   guard lstat(path, &info) == 0 else {
     throw SimSlimError("lstat \(path): \(String(cString: strerror(errno)))")
@@ -277,7 +277,7 @@ private func lstatInfo(_ path: String) throws -> stat {
   return info
 }
 
-private func isDirectory(_ info: stat) -> Bool { (info.st_mode & S_IFMT) == S_IFDIR }
+func isDirectory(_ info: stat) -> Bool { (info.st_mode & S_IFMT) == S_IFDIR }
 
 /// One directory entry as `readdir` reports it. `isDirectory` is the entry's own
 /// type (a symlink to a directory is not one), or nil when the filesystem did not
@@ -312,13 +312,21 @@ func readDirectory(_ path: String) throws -> [DirectoryEntry] {
 /// symlink (a symlink is an entry, not a directory). Every entry is `lstat`ed, so a
 /// file that vanishes mid-walk is an error, as in Go's `filepath.WalkDir` +
 /// `entry.Info()`. Used where sizes are summed.
-private func walkTree(_ root: String, _ visit: (String, stat) throws -> WalkStep) throws {
+func walkTree(
+  _ root: String, skippingVanished: Bool = false, _ visit: (String, stat) throws -> WalkStep
+) throws {
   func walk(_ path: String, _ info: stat) throws {
     let step = try visit(path, info)
     guard isDirectory(info), step == .descend else { return }
     for entry in try readDirectory(path) {
       let child = join(path, entry.name)
-      try walk(child, try lstatInfo(child))
+      var childInfo = stat()
+      if lstat(child, &childInfo) != 0 {
+        // A running device's daemons delete files as they stop.
+        if skippingVanished && errno == ENOENT { continue }
+        throw SimSlimError("lstat \(child): \(String(cString: strerror(errno)))")
+      }
+      try walk(child, childInfo)
     }
   }
   try walk(root, try lstatInfo(root))
