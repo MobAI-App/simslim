@@ -68,6 +68,9 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   /// Fails `simctl boot` / `shutdown` / `bootstatus` with this stderr when set.
   public var bootFailure: String?
   public var shutdownFailure: String?
+  /// Fails `simctl bootstatus` but leaves the device Booted, as a boot that
+  /// started and never became ready.
+  public var bootstatusFailure: String?
   /// Makes the device ignore shutdown, to exercise the shutdown timeout.
   public var stuckBooted = false
   /// Called at the start of every command, with the arguments; lets a test
@@ -128,42 +131,41 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     {
       return printDisabled(udid: rest[1])
     }
-    if let result = mutating(rest) { return result }
+    if let result = mutating(rest, token: token) { return result }
     return failure("FakeHost: unhandled simctl \(rest)")
   }
 
   // MARK: - State changes
 
-  private func setState(_ udid: String, _ state: String) -> Bool {
-    if let i = devices.firstIndex(where: { $0.udid == udid }) {
+  /// Like simctl, a device is only visible through the `--set` it lives in.
+  private func setState(_ udid: String, _ state: String, token: String) -> Bool {
+    if token.isEmpty {
+      guard let i = devices.firstIndex(where: { $0.udid == udid }) else { return false }
       devices[i].state = state
       return true
     }
-    for (token, list) in sets {
-      if let i = list.firstIndex(where: { $0.udid == udid }) {
-        sets[token]![i].state = state
-        return true
-      }
-    }
-    return false
+    guard let i = sets[token]?.firstIndex(where: { $0.udid == udid }) else { return false }
+    sets[token]![i].state = state
+    return true
   }
 
-  private func stateOf(_ udid: String) -> String? {
-    (devices + sets.values.flatMap { $0 }).first { $0.udid == udid }?.state
+  private func stateOf(_ udid: String, token: String) -> String? {
+    (token.isEmpty ? devices : sets[token] ?? []).first { $0.udid == udid }?.state
   }
 
-  private func storeDisabled(_ udid: String) -> Set<String> {
-    guard let storeRoot else { return [] }
+  /// The boolean entries launchd_sim would read from the store at start.
+  private func storeEntries(_ udid: String) -> [String: Bool] {
+    guard let storeRoot else { return [:] }
     let path = "\(storeRoot)/com.apple.CoreSimulator.SimDevice.\(udid)/disabled.plist"
     guard let data = FileManager.default.contents(atPath: path),
       let object = try? PropertyListSerialization.propertyList(
         from: data, options: [], format: nil),
-      let dict = object as? [String: Bool]
-    else { return [] }
-    return Set(dict.filter { $0.value }.keys)
+      let dict = object as? [String: Any]
+    else { return [:] }
+    return dict.compactMapValues { $0 as? Bool }
   }
 
-  private func mutating(_ rest: [String]) -> CommandResult? {
+  private func mutating(_ rest: [String], token: String) -> CommandResult? {
     lock.lock()
     defer { lock.unlock() }
     guard let verb = rest.first else { return nil }
@@ -171,37 +173,50 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
     case "boot" where rest.count == 2:
       let udid = rest[1]
       if let bootFailure { return CommandResult(status: 1, stderr: Data(bootFailure.utf8)) }
-      guard let state = stateOf(udid) else { return failure("Invalid device: \(udid)") }
+      guard let state = stateOf(udid, token: token) else {
+        return failure("Invalid device: \(udid)")
+      }
       if state == "Booted" {
         return CommandResult(
           status: 149, stderr: Data("Unable to boot device in current state: Booted".utf8))
       }
-      _ = setState(udid, "Booted")
+      _ = setState(udid, "Booted", token: token)
       var live = persistsOverrides ? (disabled[udid] ?? []) : []
-      if honoursStore { live.formUnion(storeDisabled(udid)) }
+      if honoursStore {
+        // The store is authoritative: an explicit true disables, an explicit
+        // false enables even what was disabled before.
+        for (label, off) in storeEntries(udid) {
+          if off { live.insert(label) } else { live.remove(label) }
+        }
+      }
       disabled[udid] = live
       loaded[udid] = loaded[udid] ?? Self.defaultLoaded
       loaded[udid]!.subtract(live)
       return CommandResult(status: 0)
     case "bootstatus" where rest.count == 3:
-      return stateOf(rest[1]) == "Booted"
+      if let bootstatusFailure {
+        return CommandResult(status: 1, stderr: Data(bootstatusFailure.utf8))
+      }
+      return stateOf(rest[1], token: token) == "Booted"
         ? CommandResult(status: 0) : CommandResult(status: 1, stderr: Data("not booted".utf8))
     case "shutdown" where rest.count == 2:
       let udid = rest[1]
       if let shutdownFailure { return CommandResult(status: 1, stderr: Data(shutdownFailure.utf8)) }
-      guard let state = stateOf(udid) else { return failure("Invalid device: \(udid)") }
+      guard let state = stateOf(udid, token: token) else {
+        return failure("Invalid device: \(udid)")
+      }
       if state != "Booted" {
         return CommandResult(
           status: 149, stderr: Data("Unable to shutdown device in current state: Shutdown".utf8))
       }
-      if !stuckBooted { _ = setState(udid, "Shutdown") }
+      if !stuckBooted { _ = setState(udid, "Shutdown", token: token) }
       return CommandResult(status: 0)
     case "list" where rest == ["list", "runtimes", "-j"]:
       let runtimes = runtimeRoots.map { ["identifier": $0.key, "runtimeRoot": $0.value] }
       let data = try! JSONSerialization.data(withJSONObject: ["runtimes": runtimes])
       return CommandResult(status: 0, stdout: data)
     case "spawn" where rest.count >= 4 && rest[2] == "launchctl":
-      return launchctl(udid: rest[1], Array(rest.dropFirst(3)))
+      return launchctl(udid: rest[1], token: token, Array(rest.dropFirst(3)))
     default:
       return nil
     }
@@ -210,8 +225,8 @@ public final class FakeHost: CommandRunning, @unchecked Sendable {
   /// Labels loaded in a freshly booted simulator.
   public static var defaultLoaded: Set<String> { [] }
 
-  private func launchctl(udid: String, _ args: [String]) -> CommandResult? {
-    guard stateOf(udid) == "Booted" else {
+  private func launchctl(udid: String, token: String, _ args: [String]) -> CommandResult? {
+    guard stateOf(udid, token: token) == "Booted" else {
       return CommandResult(status: 1, stderr: Data("Unable to spawn: not booted".utf8))
     }
     switch args[0] {

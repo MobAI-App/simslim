@@ -140,21 +140,56 @@ final class MutationCommandTests: XCTestCase {
 
   func testOnPreserveBootStateStillShutsDownWhenTheOperationFails() {
     let host = host(state: "Shutdown")
-    host.bootFailure = "Unable to boot"
+    // The boot starts and the device stays Booted, but never becomes ready.
+    host.bootstatusFailure = "Unable to wait for boot"
     let r = run(["on", udid, "--preserve-boot-state"], host)
     XCTAssertEqual(r.status, 1)
-    XCTAssertTrue(r.stderr.contains("Unable to boot"), r.stderr)
-    XCTAssertEqual(host.devices[0].state, "Shutdown")
+    XCTAssertTrue(r.stderr.contains("Unable to wait for boot"), r.stderr)
+    XCTAssertEqual(host.devices[0].state, "Shutdown", "the restore ran despite the failure")
+    XCTAssertTrue(subcommands(host).contains("shutdown"))
   }
 
   func testOnReportsBothFailuresWhenTheShutdownRestoreFailsToo() {
     let host = host(state: "Shutdown")
-    host.honoursStore = true
-    // The operation boots the device, then shutdown is refused.
-    host.shutdownFailure = "Unable to shut down"
+    host.bootstatusFailure = "boot never ready"
+    host.shutdownFailure = "shutdown refused"
     let r = run(["on", udid, "--preserve-boot-state"], host)
     XCTAssertEqual(r.status, 1)
-    XCTAssertTrue(r.stderr.contains("restore original shutdown state"), r.stderr)
+    XCTAssertTrue(
+      r.stderr.hasSuffix(
+        "simslim: simctl bootstatus: exit status 1: boot never ready; additionally could not "
+          + "restore original shutdown state: restore original shutdown state: "
+          + "simctl shutdown: exit status 1: shutdown refused\n"), r.stderr)
+  }
+
+  func testOnlyTheRestoreFailingIsReportedOnItsOwn() {
+    let host = host(state: "Shutdown")
+    host.shutdownFailure = "shutdown refused"
+    let r = run(["on", udid, "--preserve-boot-state"], host)
+    XCTAssertEqual(r.status, 1)
+    XCTAssertTrue(
+      r.stderr.hasSuffix(
+        "simslim: restore original shutdown state: simctl shutdown: exit status 1: shutdown refused\n"
+      ), r.stderr)
+  }
+
+  func testEveryMutationStaysInTheDeviceSetItLivesIn() {
+    // The fake only shows a device through its own --set, like simctl, so a
+    // command that lost the set would fail with "Invalid device".
+    for token in ["testing", "/custom/set"] {
+      let extra: [String] = token == "testing" ? [] : ["--set", token]
+      for state in ["Shutdown", "Booted"] {
+        let host = FakeHost(devices: [])
+        host.sets[token] = [.init(udid: udid, name: "iPhone", state: state)]
+        host.storeRoot = root
+        if state == "Booted" { host.disabled[udid] = [] }
+        for command in [["on"], ["on", "--no-reboot"], ["off"], ["boot"], ["shutdown"]] {
+          let r = runCLI(
+            extra + [command[0], udid] + command.dropFirst(), host: host, storeRoot: root)
+          XCTAssertEqual(r.status, 0, "\(token) \(state) \(command): \(r.stderr)")
+        }
+      }
+    }
   }
 
   func testOnAlreadySlimChangesNothing() {

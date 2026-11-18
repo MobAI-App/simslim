@@ -129,7 +129,7 @@ extension Simctl {
           reporter, "  retrying \(pending.count) failed services (pass \(pass)/\(applyPasses))...")
         // Give a launchd that refused the spawns a moment before asking again.
         if !retryDelays.isEmpty, !deadlineExpired {
-          sleep(retryDelays[min(pass - 2, retryDelays.count - 1)])
+          pause(retryDelays[min(pass - 2, retryDelays.count - 1)])
         }
       }
       let results = PassResults(done: done, total: total, reporter: reporter)

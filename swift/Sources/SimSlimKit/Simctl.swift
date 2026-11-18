@@ -37,6 +37,13 @@ public struct Simctl: Sendable {
 
   // MARK: - Running commands
 
+  /// Sleeps, but never past the deadline, so an expired operation wakes at once.
+  func pause(_ seconds: TimeInterval) {
+    var length = seconds
+    if let deadline { length = min(length, max(0, deadline.timeIntervalSince(now()))) }
+    sleep(length)
+  }
+
   var deadlineExpired: Bool { deadline.map { now() >= $0 } ?? false }
 
   /// Runs a command under the operation deadline. The per-call `timeout` is
@@ -224,7 +231,7 @@ public struct Simctl: Sendable {
       if !settling || attempt >= retryDelays.count || deadlineExpired {
         throw SimSlimError(message)
       }
-      sleep(retryDelays[attempt])
+      pause(retryDelays[attempt])
       attempt += 1
     }
   }

@@ -125,13 +125,22 @@ struct DisabledStore: Sendable {
   /// type are ignored rather than rejected, so an unexpected one cannot make the
   /// store unreadable.
   static func parse(_ data: Data) throws -> [String: Bool] {
+    // A zero-byte file (a launchd_sim that died mid-write) is an empty store.
+    if data.isEmpty { return [:] }
     let object: Any
+    var format = PropertyListSerialization.PropertyListFormat.xml
     do {
-      object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+      object = try PropertyListSerialization.propertyList(
+        from: data, options: [], format: &format)
     } catch {
       throw SimSlimError("parse launchd disable store: \(error.localizedDescription)")
     }
-    guard let dict = object as? [String: Any] else { return [:] }
+    // Foundation also accepts old-style text such as `garbage` as a string plist;
+    // only an XML or binary dictionary is a store.
+    guard format != .openStep, let dict = object as? [String: Any] else {
+      throw SimSlimError(
+        "parse launchd disable store: not an XML or binary property list dictionary")
+    }
     var entries: [String: Bool] = [:]
     for (label, value) in dict where !label.isEmpty {
       // Only real booleans: an integer 1 is not a disable override.

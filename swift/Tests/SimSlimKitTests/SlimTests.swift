@@ -272,15 +272,21 @@ final class SlimTests: XCTestCase {
     XCTAssertTrue(transitions(host).isEmpty)
   }
 
-  func testStockProfileRestoresEveryManagedLabelAndOnlyThose() throws {
+  func testStockProfileRestoresEveryManagedLabelOfflineAndOnlyThose() throws {
     var all = Catalog.managedSet
     all.insert("com.apple.unmanaged.service")
     let host = host(state: "Booted", disabled: all)
-    // The runtime's own record for the unmanaged label lives in the store.
+    // The store records what launchd_sim keeps for the device.
     try DisabledStore(root: root + "/store").write(
       udid: udid, toDisable: Array(all), toEnable: [])
-    let changed = try simctl(host).ensure(set: "default", udid: udid, desired: [])
+    let lines = Log()
+    let changed = try simctl(host).ensure(
+      set: "default", udid: udid, desired: [], reporter: { lines.add($0) })
     XCTAssertTrue(changed)
+    // The offline route did it: the store's explicit enables won at boot.
+    XCTAssertTrue(lines.all.contains { $0.hasPrefix("Reconfiguring \(Catalog.managedSet.count)") })
+    XCTAssertFalse(lines.all.contains { $0.hasPrefix("Could not apply") })
+    XCTAssertTrue(transitions(host).isEmpty)
     XCTAssertEqual(host.disabled[udid], ["com.apple.unmanaged.service"])
   }
 
@@ -338,15 +344,39 @@ final class SlimTests: XCTestCase {
     }
   }
 
-  func testUnreadableStoreFallsBack() throws {
-    let host = host()
+  func testUnreadableStoreFallsBackWithoutTouchingIt() throws {
     let dir = root + "/store/com.apple.CoreSimulator.SimDevice.\(udid)"
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-    try "garbage".write(toFile: dir + "/disabled.plist", atomically: true, encoding: .utf8)
-    host.honoursStore = false
-    let changed = try simctl(host).ensure(set: "default", udid: udid, desired: profileLabels)
-    XCTAssertTrue(changed)
-    XCTAssertEqual(host.disabled[udid]?.intersection(Catalog.managedSet), profileLabels)
+    for (name, text) in [
+      ("truncated xml", "<?xml version=\"1.0\"?><plist><dict><key>a</key>"),
+      ("old-style text", "garbage"),
+      ("old-style dictionary", "{ a = b; }"),
+    ] {
+      let host = host()
+      try text.write(toFile: dir + "/disabled.plist", atomically: true, encoding: .utf8)
+      let lines = Log()
+      let changed = try simctl(host).ensure(
+        set: "default", udid: udid, desired: profileLabels, reporter: { lines.add($0) })
+      XCTAssertTrue(changed, name)
+      XCTAssertFalse(lines.all.contains { $0.hasPrefix("Reconfiguring") }, name)
+      XCTAssertTrue(lines.all.contains { $0.hasPrefix("Could not apply") }, name)
+      XCTAssertEqual(
+        try String(contentsOfFile: dir + "/disabled.plist", encoding: .utf8), text, name)
+      XCTAssertEqual(host.disabled[udid]?.intersection(Catalog.managedSet), profileLabels, name)
+    }
+  }
+
+  func testAnEmptyStoreFileIsAnEmptyStoreAndTakesTheOfflineRoute() throws {
+    let dir = root + "/store/com.apple.CoreSimulator.SimDevice.\(udid)"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: dir + "/disabled.plist", contents: Data())
+    let host = host()
+    let lines = Log()
+    try simctl(host).ensure(
+      set: "default", udid: udid, desired: profileLabels, reporter: { lines.add($0) })
+    XCTAssertTrue(lines.all.contains { $0.hasPrefix("Reconfiguring") })
+    XCTAssertFalse(lines.all.contains { $0.hasPrefix("Could not apply") })
+    XCTAssertEqual(try DisabledStore(root: root + "/store").readDisabled(udid: udid), profileLabels)
   }
 
   // MARK: - applyDelta
@@ -472,6 +502,20 @@ final class SlimTests: XCTestCase {
     XCTAssertThrowsError(try ctl.shutdown(set: "default", udid: udid)) {
       XCTAssertEqual("\($0)", "context deadline exceeded")
     }
+  }
+
+  func testRetrySleepsNeverOutlastTheDeadline() throws {
+    let host = host(state: "Booted")
+    host.queueSpawnResults(
+      udid: udid, [CommandResult(status: 124, stderr: Data("Domain is tearing down".utf8))])
+    var ctl = simctl(host)
+    ctl.retryDelays = [100]
+    ctl.deadline = Date(timeIntervalSinceNow: 5)
+    let slept = Log()
+    ctl.sleep = { slept.add("\($0)") }
+    _ = try ctl.readDisabled(set: "default", udid: udid)
+    let seconds = try XCTUnwrap(slept.all.first.flatMap(Double.init))
+    XCTAssertLessThanOrEqual(seconds, 5)
   }
 
   func testWaitShutdownTimesOut() throws {
