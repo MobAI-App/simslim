@@ -1,0 +1,11 @@
+/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation
+/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation
+/usr/lib/libobjc.A.dylib
+/usr/lib/libSystem.B.dylib
+/usr/lib/swift/libswiftCore.dylib
+/usr/lib/swift/libswiftCoreFoundation.dylib
+/usr/lib/swift/libswiftDarwin.dylib
+/usr/lib/swift/libswiftDispatch.dylib
+/usr/lib/swift/libswiftIOKit.dylib
+/usr/lib/swift/libswiftObjectiveC.dylib
+/usr/lib/swift/libswiftXPC.dylib
