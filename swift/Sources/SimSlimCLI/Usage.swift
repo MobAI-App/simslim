@@ -49,17 +49,17 @@ let usageText = """
         --list           List every checkable feature and its daemons
     measure <udid>       Report a booted simulator's memory footprint
     top [udid]           Live fleet monitor
-    size <udid>      †   Report a simulator's allocated disk footprint
-    disk-categories  †   Show cleanup and protected system-asset categories
-    disk-plan <udid> †   Measure reclaimable and stored data without deleting
-    disk-clean <udid> †  Permanently delete selected per-device data
+    size <udid>          Report a simulator's allocated disk footprint
+    disk-categories      Show cleanup and protected system-asset categories
+    disk-plan <udid>     Measure reclaimable and stored data without deleting
+    disk-clean <udid>    Permanently delete selected per-device data
     clone <udid> <name> †  Clone apps, data, settings, and the service profile
     repair-clone <source-udid> <clone-udid> †
-    rename <udid> <name> †  Rename a simulator
+    rename <udid> <name> Rename a simulator
     boot <udid>          Boot a simulator and wait for its services
     shutdown <udid>      Shut down a booted simulator
-    erase <udid>     †   Erase a simulator's apps, data, and settings
-    delete <udid>    †   Permanently delete a simulator
+    erase <udid>         Erase a simulator's apps, data, and settings
+    delete <udid>        Permanently delete a simulator
         --json           Print machine-readable JSON (also supported by list,
                          profiles, status, verify, doctor)
     version              Print the version

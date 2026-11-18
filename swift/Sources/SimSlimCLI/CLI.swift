@@ -58,8 +58,7 @@ public struct CLI {
 
   /// Commands that exist in the Go CLI but are not in the Swift port yet.
   static let notYetPorted: Set<String> = [
-    "profile", "size", "disk-categories",
-    "disk-plan", "disk-clean", "clone", "repair-clone",
+    "profile", "clone", "repair-clone",
   ]
 
   static let globalSpecs: [FlagSpec] = [
@@ -83,6 +82,13 @@ public struct CLI {
     ],
     "off": [.bool("preserve-boot-state")],
     "top": [.bool("json", onlyOnce: true)],
+    "size": [.bool("json", onlyOnce: true)],
+    "disk-categories": [.bool("json", onlyOnce: true)],
+    "disk-plan": [.bool("json", onlyOnce: true)],
+    "disk-clean": [
+      .bool("json", onlyOnce: true), .string("categories"), .bool("confirm"),
+      .bool("preserve-boot-state"),
+    ],
     "watch": [
       .bool("json"), .string("profile"), .string("except"), .string("keep"), .string("interval"),
     ],
@@ -186,6 +192,10 @@ public struct CLI {
     case "erase": return try cmdErase(context)
     case "delete": return try cmdDelete(context)
     case "top": return try cmdTop(context)
+    case "size": return try cmdSize(context)
+    case "disk-categories": return try cmdDiskCategories(context)
+    case "disk-plan": return try cmdDiskPlan(context)
+    case "disk-clean": return try cmdDiskClean(context)
     case "watch": return try cmdWatch(context)
     case "enable": return try cmdEnable(context)
     case "disable": return try cmdDisable(context)
