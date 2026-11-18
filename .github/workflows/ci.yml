@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+  swift:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: make swift-lint
+      - name: Catalog is in sync with the Go source
+        run: make swift-gen-check
+      - name: Test
+        run: make swift-test
+      - name: Dependency audit
+        run: make verify-deps
+
   check:
     runs-on: macos-26
     env:

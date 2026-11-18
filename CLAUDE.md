@@ -10,6 +10,28 @@ CLI plus a SwiftUI macOS app that wraps it. Everything is driven through
 `xcrun simctl`; the tool only ever touches the simulators you point it at, never
 the host Mac. macOS-only.
 
+## The Swift port (`swift/`)
+
+This repository is an independent Swift port of MobAI's simslim, kept beside the Go code. The Go sources
+are the behavioural reference; `swift/` holds a dependency-free reimplementation built with the Xcode
+toolchain alone (`SimSlimKit` is the library, `SimSlimCLI` the commands, `simslim` the executable).
+Plan and status: `docs/swift-port-plan.md`.
+
+```sh
+make swift-lint       # swift-format --strict over swift/Sources and swift/Tests
+make swift-test       # cd swift && swift test
+make swift-gen-check  # Generated/ catalog files still match the Go source (python3)
+make verify-deps      # system modules only, no network symbols, no third-party libs
+```
+
+- After changing `profiles.go`, `service_descriptions.go`, `features.go` or `profiles_test.go`, run
+  `make swift-gen`; never edit `swift/**/Generated/` by hand.
+- The same safety invariants and `--json` contract apply; a change to one implementation needs the other
+  kept in step, and the Swift tests must stay green.
+- Every Swift file starts with `// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.`
+  (Package.swift: the line after `swift-tools-version`).
+- CI runs the Swift job and the Go job; `release.yml` publishes only the Swift CLI.
+
 ## Commands
 
 ```sh

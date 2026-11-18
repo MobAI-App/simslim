@@ -1,6 +1,6 @@
 # simslim Swift port: plan
 
-Status: draft for review. Nothing in this plan is implemented yet.
+Status: M1 to M6 are implemented: every Go command is ported with the `--json` contract kept. M7 (side-by-side parity runs on real simulators) and M8 (switch the app build to the Swift CLI) are still open.
 Branch: `swift-port` (no upstream). Go code stays untouched as the reference until the port reaches parity.
 
 ## 1. Goal and non-goals

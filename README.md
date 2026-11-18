@@ -1,5 +1,25 @@
 # simslim
 
+> **This repository is an independent Swift port of [MobAI's simslim](https://github.com/mobai-app/simslim).
+> It is not the official project and is not meant to be merged upstream.**
+>
+> Many thanks to the original authors at [MobAI](https://mobai.run) (Interlap) for simslim itself: the
+> daemon allowlist, the offline `disabled.plist` fast path, the measurements, and the design this port follows.
+>
+> **Why a port.** To use fewer technologies for the same result. The original CLI is written in Go; the CLI
+> in [`swift/`](swift) builds with the Xcode toolchain alone, which any Mac that runs the Simulator already has.
+> It has no Go toolchain, no third-party packages and no network access, and
+> [`scripts/verify-deps.sh`](scripts/verify-deps.sh) checks that.
+>
+> **Status.** Every command is ported and the `--json` contract is kept. Unit tests cover the safety
+> invariants; side-by-side runs against the Go version on real simulators are still to be done, so treat the Go
+> version as the reference for now. The Go sources stay in this repository for that purpose, and the macOS app
+> still bundles the Go CLI.
+>
+> **Upstream.** The Homebrew tap `mobai-app/tap` and `go install github.com/mobai-app/simslim` install
+> upstream's Go version, not this port. Report problems with the Swift port here and problems with the Go
+> version upstream.
+
 Run a lot more iOS, Apple TV (tvOS), Apple Watch (watchOS), and Apple Vision Pro (visionOS) simulators on one Mac by turning off the background daemons a simulator doesn't need.
 
 A freshly booted iOS simulator starts around 180 background services: Siri, Spotlight indexing, photo analysis, News, wallpaper posters, iCloud sync, and so on. None of it matters when you're using the simulator for development, testing, or CI. simslim switches those services off, which cuts each simulator's memory roughly 4x. On the same laptop you go from a handful of simulators to a screenful.
@@ -28,25 +48,24 @@ shared mappings once for every process that maps them.
 
 ## Install
 
+### This port (Swift, Xcode only)
+
 ```sh
-brew install mobai-app/tap/simslim
+git clone https://github.com/Akhrameev/simslim && cd simslim/swift
+swift build -c release
+.build/release/simslim --version
 ```
 
-or
+### Upstream Go version (MobAI)
+
+These install MobAI's original build, not this port:
 
 ```sh
+brew install mobai-app/tap/simslim
 go install github.com/mobai-app/simslim/cmd/simslim@latest
 ```
 
-### Build with Xcode only (Swift port, no Go)
-
-`swift/` is a Swift port with no third-party dependencies, built with the Xcode
-toolchain alone:
-
-```sh
-cd swift && swift build -c release
-.build/release/simslim --version
-```
+### About the Swift port
 
 It covers every command: `list`, `profiles`, `status`, `verify`, `doctor`,
 `measure`, `on`, `off`, `boot`, `shutdown`, `enable`, `disable`, `watch`,
@@ -424,6 +443,9 @@ behavior, safeguards, and Xcode 26.6 validation results.
 
 ## Use as a Go library
 
+This section describes upstream's Go package, which remains in this repository as the reference.
+The Swift port has no stable library API yet.
+
 The repo root is an importable package with no external dependencies, so you can
 drive simulators from your own tooling instead of shelling out to the CLI:
 
@@ -542,4 +564,4 @@ Built for [MobAI](https://mobai.run) to run more simulators on one machine.
 
 ## License
 
-MIT, copyright Interlap.
+MIT. Copyright Interlap (original simslim) and Pavel Akhrameev (Swift port). See [LICENSE](LICENSE).

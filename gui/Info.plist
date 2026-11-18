@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>SimSlim</string>
 	<key>CFBundleIdentifier</key>
-	<string>app.mobai.simslim</string>
+	<string>io.github.akhrameev.simslim</string>
 	<key>CFBundleIconFile</key>
 	<string>SimSlim.icns</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -29,7 +29,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © Interlap. MIT licensed.</string>
+	<string>Copyright © Interlap; © 2026 Pavel Akhrameev (Swift port). MIT licensed.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

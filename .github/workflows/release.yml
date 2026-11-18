@@ -1,67 +1,40 @@
 name: release
 
+# Publishes the Swift CLI built with the Xcode toolchain alone. This fork does not
+# publish the Go build or a Homebrew bottle: those belong to upstream
+# (github.com/mobai-app/simslim) and its tap.
+
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release tag to add a Homebrew bottle to
-        required: true
-        type: string
-
-env:
-  SIMSLIM_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
 
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  SIMSLIM_RELEASE_TAG: ${{ github.ref_name }}
+
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - name: Test
+        run: |
+          cd swift
+          swift test
       - name: Build
-        if: github.event_name == 'push'
         run: |
           SIMSLIM_VERSION="${SIMSLIM_RELEASE_TAG#v}"
-          go test ./...
-          go build -ldflags "-X main.version=${SIMSLIM_VERSION}" -o simslim ./cmd/simslim
+          printf '// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.\n\npublic let simslimVersion = "%s"\n' \
+            "${SIMSLIM_VERSION}" > swift/Sources/SimSlimKit/Version.swift
+          (cd swift && swift build -c release)
+          cp swift/.build/release/simslim simslim
           codesign --force --sign - simslim
+          test "$(./simslim --version)" = "simslim ${SIMSLIM_VERSION}"
           tar -czf "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz" simslim
-          shasum -a 256 "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz"
-      - name: Build Homebrew bottle
-        run: |
-          SIMSLIM_SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${SIMSLIM_RELEASE_TAG}.tar.gz"
-          SIMSLIM_SOURCE_TARBALL="${RUNNER_TEMP}/simslim-source.tar.gz"
-          SIMSLIM_BUILD_TAP="mobai-app/simslim-release"
-
-          curl --fail --location --retry 3 "${SIMSLIM_SOURCE_URL}" --output "${SIMSLIM_SOURCE_TARBALL}"
-          SIMSLIM_SOURCE_SHA256="$(shasum -a 256 "${SIMSLIM_SOURCE_TARBALL}" | cut -d ' ' -f 1)"
-
-          brew tap-new --no-git "${SIMSLIM_BUILD_TAP}"
-          SIMSLIM_FORMULA="$(brew --repository "${SIMSLIM_BUILD_TAP}")/Formula/simslim.rb"
-          mkdir -p "$(dirname "${SIMSLIM_FORMULA}")"
-          sed \
-            -e "s|@SOURCE_URL@|${SIMSLIM_SOURCE_URL}|g" \
-            -e "s|@SOURCE_SHA256@|${SIMSLIM_SOURCE_SHA256}|g" \
-            packaging/homebrew/simslim.rb.in > "${SIMSLIM_FORMULA}"
-
-          brew install --build-bottle "${SIMSLIM_BUILD_TAP}/simslim"
-          brew test "${SIMSLIM_BUILD_TAP}/simslim"
-          brew bottle \
-            --json \
-            --no-rebuild \
-            --root-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${SIMSLIM_RELEASE_TAG}" \
-            "${SIMSLIM_BUILD_TAP}/simslim"
-
-          # brew uses a double dash locally; custom HTTP bottle URLs use one.
-          for SIMSLIM_BOTTLE in simslim--*.bottle*.tar.gz; do
-            mv "${SIMSLIM_BOTTLE}" "${SIMSLIM_BOTTLE/--/-}"
-          done
+          shasum -a 256 "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz" | tee "simslim-${SIMSLIM_RELEASE_TAG}-macos-arm64.tar.gz.sha256"
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -69,4 +42,4 @@ jobs:
           generate_release_notes: true
           files: |
             simslim-*-macos-arm64.tar.gz
-            simslim-*.bottle*.tar.gz
+            simslim-*.sha256
