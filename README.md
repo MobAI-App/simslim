@@ -556,6 +556,29 @@ Turning services off is fine for most development, UI automation, and CI, but so
 
 `simslim profiles` lists every category, so you can keep a category with `--except` or individual daemons with `--keep`.
 
+## TODO
+
+- **`disabled.plist` lags the real state, on both tools, in two different ways.** The
+  host-side `disabled.plist` (`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<udid>/`)
+  is CoreSimulator/`launchd_sim`'s own undocumented bookkeeping, not simslim's — both CLIs
+  only verify the authoritative, in-guest `launchctl print-disabled` state before declaring
+  success, and that matched between Go and Swift in every trial below. (1) Right after `on`
+  returns, the file can briefly be mid-rewrite — truncated at a filesystem block boundary,
+  or validly parseable but still missing entries — settling within a few seconds. Reproduced
+  with the Swift CLI much more often than Go across repeated trials, likely just because
+  Go's commands happen to take a little longer before returning (e.g. an extra
+  launchd-settling retry on the first in-guest readback) and so trips the race less, not
+  because of anything either tool does differently; both write their own part of the file
+  atomically (temp file + `rename(2)`). `scripts/parity.sh`'s `snapstore()` now requires two
+  consecutive identical reads (up to ~4.5s) before trusting one. (2) After a *live*
+  `enable`/`disable`/`on --no-reboot`, which never writes the store directly, the file can
+  lag **indefinitely** — confirmed with a direct in-guest check that Go and Swift end up
+  disabling the exact same labels, while the host file stayed stale for Swift well past any
+  reasonable retry window. `parity.sh` no longer snapshots the store after `on --no-reboot`
+  because of this. Worth digging into further: does anything else that reads this file
+  right after a live call (the GUI, `watch`'s pre-boot seeding) need to tolerate the same
+  staleness, bounded or not?
+
 ## Why
 
 Testing is shifting. Once agents are writing apps, you want agents running them too, and the place an iOS app runs is a simulator. One agent, one simulator. So how much work you get through at once comes down to how many simulators a machine can hold, and stock simulators are heavy enough that a laptop fills up fast. Slimming them is the cheapest way to raise that ceiling: more simulators on the box means more agents working in parallel on it.

@@ -209,10 +209,29 @@ print(r["identifier"], want[1] or types[-1])' "$RUNTIME" "$DEVTYPE"
 }
 
 snapstore() { # snapstore TOOL NAME UDID : the host-side disabled.plist, as sorted disabled labels
-  local tool="$1" name="$2" u="$3" f
+  local tool="$1" name="$2" u="$3" f json prev i
   f="$STORE_ROOT/com.apple.CoreSimulator.SimDevice.$u/disabled.plist"
   mkdir -p "$OUT/$tool/mutating"
-  if [ -f "$f" ]; then plutil -convert json -o - "$f" 2>/dev/null; else echo '{}'; fi |
+  # launchd_sim owns this file and rewrites it asynchronously around boot and
+  # live disable/enable calls (an undocumented CoreSimulator detail; see
+  # docs/parity-check.md), so a read right after a command returns can catch it
+  # mid-rewrite: not just briefly malformed, but validly parseable yet still
+  # incomplete. Require two consecutive identical reads before trusting one,
+  # rather than recording a false diff off whatever the first valid-looking
+  # read happened to catch.
+  json=""
+  prev=""
+  if [ -f "$f" ]; then
+    for i in $(seq 1 30); do
+      json="$(plutil -convert json -o - "$f" 2>/dev/null)"
+      if [ -n "$json" ] && [ "$json" = "$prev" ]; then break; fi
+      prev="$json"
+      json=""
+      sleep 0.15
+    done
+    [ -z "$json" ] && json="$prev"
+  fi
+  if [ -n "$json" ]; then printf '%s' "$json"; else echo '{}'; fi |
     python3 -I -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -255,7 +274,10 @@ mutating_steps() { # mutating_steps TOOL
   cap "$tool" "$d" 06-off exact $bt off "$DEV"
   cap "$tool" "$d" 07-on-noreboot exact $bt on "$DEV" --no-reboot
   cap "$tool" "$d" 07-status exact status "$DEV" --json
-  snapstore "$tool" 07-on-noreboot "$DEV"
+  # No store snapshot here: --no-reboot never writes the store directly, so the
+  # host-side disabled.plist depends entirely on launchd_sim's own best-effort,
+  # unboundedly-delayed bookkeeping of live launchctl calls. Direct in-guest
+  # comparison (confirmed equal for Go and Swift) is what actually matters.
   cap "$tool" "$d" 08-enable exact enable "$DEV" icloud --json
   cap "$tool" "$d" 08-status exact status "$DEV" --dropped --json
   cap "$tool" "$d" 09-disable exact disable "$DEV" icloud --json

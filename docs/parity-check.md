@@ -49,6 +49,13 @@ Expected, and harmless to the macOS app; they appear in the report as diffs unle
 - Non-JSON error text for file and I/O errors differs (Foundation vs Go wording).
 - `simslim --json list` is accepted by Swift only; `watch extra-arg` is an error in Swift only.
 - Ctrl-C during `on`, `off` and `clone` does not run Go's cleanup in Swift.
+- `mutating/*.store` after `on` can transiently see a truncated, missing, or
+  validly-parseable-but-incomplete host-side `disabled.plist` (CoreSimulator/`launchd_sim`
+  rewrites that file asynchronously around boot; see the TODO in the README).
+  `snapstore()` requires two consecutive identical reads (up to ~4.5s) before trusting one.
+  There is no `mutating/07-on-noreboot.store` snapshot at all: `--no-reboot` never writes
+  the store directly, so the file can lag the real, confirmed-identical in-guest state
+  indefinitely, not just briefly.
 
 Anything else in `report.txt` is a real difference to investigate. When one is intentional, add it to this
 list; when it is a bug, fix the Swift side and re-run.
