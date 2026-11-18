@@ -165,7 +165,7 @@ final class MeasureTests: XCTestCase {
       """
     XCTAssertEqual(
       Simctl.parseTopMemory(output),
-      [101: 45 * 1_048_576, 102: 1_610_612_736, 103: 900 * 1024, 104: 12])
+      [101: 45 * 1_048_576, 102: 1_610_612_736, 103: 900 * 1024, 104: 12] as [Int: Int64])
   }
 
   func testParsePSKeepsParentLinksCPUAndBasename() {
