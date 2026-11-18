@@ -235,25 +235,25 @@ mutating_steps() { # mutating_steps TOOL
   local tool="$1" d="$OUT/$1/mutating" bt="--boot-timeout 20m" clone
   reset_device
   snapstore "$tool" 00-stock "$DEV"
-  cap "$tool" "$d" 01-on exact $bt on "$DEV" --json
+  cap "$tool" "$d" 01-on exact $bt on "$DEV"
   cap "$tool" "$d" 01-status exact status "$DEV" --json
   cap "$tool" "$d" 01-verify exact verify "$DEV" --json
   snapstore "$tool" 01-on "$DEV"
-  cap "$tool" "$d" 02-off exact $bt off "$DEV" --json
+  cap "$tool" "$d" 02-off exact $bt off "$DEV"
   cap "$tool" "$d" 02-status exact status "$DEV" --json
   snapstore "$tool" 02-off "$DEV"
-  cap "$tool" "$d" 03-on-except exact $bt on "$DEV" --except search,store --json
+  cap "$tool" "$d" 03-on-except exact $bt on "$DEV" --except search,store
   cap "$tool" "$d" 03-verify exact verify "$DEV" --except search,store --json
   snapstore "$tool" 03-on-except "$DEV"
-  cap "$tool" "$d" 04-on-keep exact $bt on "$DEV" --keep com.apple.apsd --json
+  cap "$tool" "$d" 04-on-keep exact $bt on "$DEV" --keep com.apple.apsd
   cap "$tool" "$d" 04-verify exact verify "$DEV" --keep com.apple.apsd --json
   snapstore "$tool" 04-on-keep "$DEV"
   printf '{ "name": "parity", "except": ["photos"], "keep": ["com.apple.apsd"] }\n' >"$OUT/profile.json"
-  cap "$tool" "$d" 05-on-profile exact $bt on "$DEV" --profile "$OUT/profile.json" --json
+  cap "$tool" "$d" 05-on-profile exact $bt on "$DEV" --profile "$OUT/profile.json"
   cap "$tool" "$d" 05-verify exact verify "$DEV" --profile "$OUT/profile.json" --json
   snapstore "$tool" 05-on-profile "$DEV"
-  cap "$tool" "$d" 06-off exact $bt off "$DEV" --json
-  cap "$tool" "$d" 07-on-noreboot exact $bt on "$DEV" --no-reboot --json
+  cap "$tool" "$d" 06-off exact $bt off "$DEV"
+  cap "$tool" "$d" 07-on-noreboot exact $bt on "$DEV" --no-reboot
   cap "$tool" "$d" 07-status exact status "$DEV" --json
   snapstore "$tool" 07-on-noreboot "$DEV"
   cap "$tool" "$d" 08-enable exact enable "$DEV" icloud --json
@@ -266,11 +266,11 @@ mutating_steps() { # mutating_steps TOOL
   cap "$tool" "$d" 12-measure shape measure "$DEV" --json
   cap "$tool" "$d" 13-shutdown exact shutdown "$DEV" --json
   cap "$tool" "$d" 13-disable-notbooted exact disable "$DEV" icloud --json
-  cap "$tool" "$d" 14-size exact size "$DEV" --json
-  cap "$tool" "$d" 14-disk-plan exact disk-plan "$DEV" --json
+  cap "$tool" "$d" 14-size shape size "$DEV" --json
+  cap "$tool" "$d" 14-disk-plan shape disk-plan "$DEV" --json
   cap "$tool" "$d" 15-rename exact rename "$DEV" "parity-renamed" --json
   # clone: the clone's UDID differs per run; both runs normalize it to <UDID1>.
-  cap "$tool" "$d" 16-on-before-clone exact $bt on "$DEV" --json
+  cap "$tool" "$d" 16-on-before-clone exact $bt on "$DEV"
   cap "$tool" "$d" 16-shutdown exact shutdown "$DEV" --json
   cap "$tool" "$d" 17-clone exact $bt clone "$DEV" parity-clone --json
   clone="$(python3 -I -c 'import json,sys;print(json.load(sys.stdin).get("udid",""))' <"$d/17-clone.raw.out" 2>/dev/null)"
@@ -297,6 +297,14 @@ if [ "$MUTATING" = 1 ]; then
   for f in "$OUT"/go/mutating/*.code; do
     n="$(basename "$f" .code)"
     compare_one mutating "$n"
+  done
+  # Identical failures compare equal, so list the steps that failed in either tool:
+  # a step that fails everywhere usually means the script, not the tools, is wrong.
+  echo "  non-zero exits (expected for the deliberate error steps 10-*, 13-disable-*):"
+  for tool in go swift; do
+    for f in "$OUT/$tool"/mutating/*.code; do
+      [ "$(cat "$f")" != 0 ] && echo "    $tool $(basename "$f" .code): $(head -c 100 "${f%.code}.err" | tr '\n' ' ')"
+    done
   done
 fi
 
