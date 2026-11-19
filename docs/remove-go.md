@@ -51,7 +51,7 @@ tag, then delete) on its own branch, after a final green parity run.
 - **`.github/workflows/ci.yml`:** delete the `go-reference` job and `make swift-gen-check` from the
   `swift` job.
 - **`scripts/parity.sh`:** keep it only if you still want to compare against a Go build. Then it must build
-  `GO_BIN` from the `go-reference-final` tag (`git worktree add ../simslim-go go-reference-final`) instead of
+  `GO_BIN` from the `go-reference-final` tag (`git worktree add --detach ../simslim-go-reference go-reference-final`) instead of
   `./cmd/simslim`; change the build step and its header comment accordingly. If you drop parity checks
   entirely, delete it, `scripts/parity-normalize.py` and `parity-check.md`.
 - **`scripts/verify-deps.sh`:** nothing to change; its only Go reference is a comment noting the help credit

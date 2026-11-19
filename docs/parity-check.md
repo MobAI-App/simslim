@@ -1,7 +1,7 @@
 # Go-vs-Swift parity check
 
 The Swift port reached parity and the Go tree was removed from this repository (see
-[docs/remove-go.md](docs/remove-go.md)); this script remains as a regression check against the last Go
+[remove-go.md](remove-go.md)); this script remains as a regression check against the last Go
 build, tagged `go-reference-final`.
 
 `scripts/parity.sh` runs the same commands through that Go build and the current Swift CLI and diffs the

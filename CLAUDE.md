@@ -55,8 +55,8 @@ Public identifiers in `SimSlimKit` are its API, so renaming one is a breaking ch
 as for the CLI.
 
 **The slimming model (the core idea).** `Catalog.swift` defines `Catalog.categories`, an allowlist of
-launchd daemon labels grouped by user-facing feature (siri, search, icloud, …), plus the generated
-`Generated/CatalogData.swift` seed data. Categories may overlap — a label lives in every category whose
+launchd daemon labels grouped by user-facing feature (siri, search, icloud, …), plus the
+`Generated/CatalogData.swift` seed data (hand-maintained now; the folder name is historical). Categories may overlap — a label lives in every category whose
 feature needs it (e.g. the AMS payment-sheet daemons are in both `store` and `icloud`), and
 `Profile.desired()` keeps a label enabled when **any** excepted category lists it. `Catalog.slimmableSet` is
 the deduplicated union of every label in `Catalog.categories`.
@@ -67,7 +67,7 @@ tool may ever disable or enable.** Anything outside those sets is never touched.
 whose `except`/`keep` arrays mirror the flags of the same name, validates it
 against the allowlist, and resolves it to a `Profile`. The `profile` command's interactive wizard lives in
 `WizardModel.swift`/`WizardTerminal.swift`.
-`Features.swift` defines `Features`, a finer-grained catalog than `Catalog.categories`:
+`Features.swift` defines `Catalog.features` (data in `featureList`), a finer-grained catalog than `Catalog.categories`:
 each feature (push, storekit, universal-links, …) names just the daemons one
 testable capability needs. `doctor` reads a booted simulator's disabled labels
 and reports any required feature whose daemons are down, exiting non-zero — a CI
@@ -122,9 +122,9 @@ device on startup. A kqueue `NOTE_WRITE` watch on each device-set directory
 missing) seeds a new device from its `device.plist` within milliseconds of `simctl create`,
 without waiting for `simctl list`. A boot that starts first is logged and
 caught by the no-reboot slim at boot, which stays as the read-back and fallback.
-Each boot's after-boot pass has its own cancel (`slimPass`), called when the
+Each boot's after-boot pass has its own cancel (`Watcher.Pass.cancel()`), called when the
 device shuts down or is deleted, so a pass never retries into the next boot; a
-superseded pass reports `stopped`, never `slimmed`. `WatchWithEvents` emits
+superseded pass reports `stopped`, never `slimmed`. `Watcher.run` emits
 `WatchEvent`s, which `watch --json` prints one per line as a stable contract.
 
 **Live enable/disable.** `Live.swift` holds `enableServices`/`disableServices`
@@ -200,14 +200,20 @@ The app is a thin front end that shells out to that bundled binary.
   `--spawn-timeout` are global flags (`CLI.globalSpecs`). `CLI.run(_:)` owns `version`/`help`/no-args and
   the macOS-only guard before dispatching to a `cmd*` function, and routes every command error through a
   shared `simslim: <msg>` formatter (exit 1); unknown commands exit 2 with usage.
-- Two timeouts live in `Simctl.swift`: `shutdownTimeout` and `bootTimeout`
-  (10min default, because a first slim reconfigure boots twice). `bootTimeout` is mutable, so the CLI's
-  global `--boot-timeout` flag (env `SIMSLIM_BOOT_TIMEOUT`,
-  wired in `CLI.swift` like `--set`) can raise it for slow CI runners where the per-daemon
-  `launchctl` transitions would otherwise blow the deadline mid-reconfigure.
+- Two timeouts: `Simctl.shutdownTimeout` (30s, `Lifecycle.swift`) and the boot timeout (10min default,
+  because a first slim reconfigure boots twice), resolved in `SimSlimCLI/CLI.swift` from the global
+  `--boot-timeout` flag (env `SIMSLIM_BOOT_TIMEOUT`) and passed down as a parameter, so slow CI runners can
+  raise it where the per-daemon `launchctl` transitions would otherwise blow the deadline mid-reconfigure.
 - Progress for multi-minute operations goes to **stderr** via the `Reporter` callback;
   machine-readable JSON goes to **stdout**. Under `--json`, suppress the stderr
   chatter so consumers reading a combined stream still get clean JSON.
+- Every Swift file starts with `// Copyright (c) 2026 Pavel Akhrameev (Swift port). MIT License; see LICENSE.`
+  (`Package.swift`: the line after `swift-tools-version`). The files under `Generated/` carry
+  `// swift-format-ignore-file` on line 1 and the copyright on line 2.
+- `Generated/` is edited by hand now (the generator went with the Go tree). `ProfilesTests` and
+  `FeaturesTests` are its only guard: they enforce the forbidden-label list, managed/unmanaged invariants,
+  and that every daemon has a short description (`testEveryServiceHasShortDescription`,
+  `serviceDescriptionByLabel`). Keep them green when editing the catalog.
 - Memory estimates (`approxMemoryMB`) are iOS-26.5 clean-boot medians and are
   **not additive**. Every category must have a positive measured estimate.
 

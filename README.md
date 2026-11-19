@@ -16,8 +16,9 @@
 > [docs/remove-go.md](docs/remove-go.md)). [`scripts/parity.sh`](scripts/parity.sh) remains as a
 > regression check against the last Go build, tagged `go-reference-final`: it runs the same commands
 > through both CLIs on real simulators and diffs the output. A full run (read-only, `--mutating` on a
-> scratch simulator, and `--watch`) showed no behavioral differences; the known, deliberate ones are listed
-> in [docs/parity-check.md](docs/parity-check.md).
+> scratch simulator, and `--watch`) found no behavioral differences on the paths it covers. That is not a
+> proof of full parity: live measurements are compared by shape, and the known, deliberate differences
+> (including a run-order effect in `watch`) are listed in [docs/parity-check.md](docs/parity-check.md).
 >
 > **Upstream.** The Homebrew tap `mobai-app/tap` and `go install github.com/mobai-app/simslim` install
 > upstream's Go version, not this port. Report problems with this Swift build here and problems with the Go
@@ -439,8 +440,9 @@ behavior, safeguards, and Xcode 26.6 validation results.
 
 `SimSlimKit` (`swift/Sources/SimSlimKit`) is the importable library behind the CLI, with no external
 dependencies, so you can drive simulators from your own Swift tooling instead of shelling out to the CLI —
-see [CLAUDE.md](CLAUDE.md#architecture) for its shape. It has no stable, versioned API yet; add it as a
-local Swift package dependency on this checkout if you want to use it today.
+see [CLAUDE.md](CLAUDE.md#architecture) for its shape. It is not published as a package product and has no
+stable, versioned API; today it is an internal target of this repository's package (`swift/Package.swift`),
+not something other packages can depend on.
 
 Upstream's original Go package (`go get github.com/mobai-app/simslim`) offers the same capability for the
 Go build; see [its repository](https://github.com/mobai-app/simslim) for that API.

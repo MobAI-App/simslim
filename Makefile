@@ -18,6 +18,6 @@ swift-lint:
 swift-test:
 	cd swift && swift test
 
-# Manual dependency audit of the Swift port (not part of CI).
+# Dependency audit of the Swift port (system modules only, no network, no third-party libs).
 verify-deps:
 	./scripts/verify-deps.sh

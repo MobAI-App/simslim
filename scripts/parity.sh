@@ -45,7 +45,7 @@ while [ $# -gt 0 ]; do
     --runtime) RUNTIME="$2"; shift ;;
     --devicetype) DEVTYPE="$2"; shift ;;
     --out) OUT="$2"; shift ;;
-    -h | --help) sed -n 2,23p "$0"; exit 0 ;;
+    -h | --help) sed -n 2,24p "$0"; exit 0 ;;
     *) echo "parity: unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -54,6 +54,7 @@ done
 [ "$(uname)" = Darwin ] || { echo "parity: macOS only" >&2; exit 2; }
 OUT="${OUT:-$ROOT/build/parity/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"   # absolute: the Go build below runs from another directory
 NORM="$ROOT/scripts/parity-normalize.py"
 
 # --- binaries ---------------------------------------------------------------
@@ -61,8 +62,13 @@ if [ -z "${GO_BIN:-}" ]; then
   command -v go >/dev/null || { echo "parity: go not found (or set GO_BIN)" >&2; exit 2; }
   GO_WORKTREE="$ROOT/../simslim-go-reference"
   if [ ! -d "$GO_WORKTREE" ]; then
+    git worktree prune
     git worktree add --detach "$GO_WORKTREE" go-reference-final >/dev/null || exit 2
   fi
+  want="$(git rev-parse 'go-reference-final^{commit}' 2>/dev/null)" ||
+    { echo "parity: tag go-reference-final not found (git fetch --tags)" >&2; exit 2; }
+  [ "$(git -C "$GO_WORKTREE" rev-parse HEAD 2>/dev/null)" = "$want" ] ||
+    { echo "parity: $GO_WORKTREE is not at go-reference-final; remove it (git worktree remove --force) and rerun" >&2; exit 2; }
   GO_BIN="$OUT/simslim-go"
   (cd "$GO_WORKTREE" && go build -o "$GO_BIN" ./cmd/simslim) || exit 2
 fi
