@@ -23,8 +23,9 @@ raw and normalized output of each command. Exit status is 1 if anything differs.
 - **Per simulator (read-only):** `status`, `verify`, `doctor`, `measure`, `size`, `disk-plan`.
 - **`--mutating`:** creates `simslim-parity-<pid>`, then for each CLI in turn resets it and runs `on`, `off`,
   `on --except`, `on --keep`, `on --profile`, `on --no-reboot`, `enable`, `disable`, `doctor`, `shutdown`,
-  `rename`, `clone`, `repair-clone`, `erase`. After each step it saves `status`, `verify` and the contents of
-  the host-side `disabled.plist`, so the persisted overrides are compared, not only the printed text. The
+  `rename`, `clone`, `repair-clone`, `erase`. `on` and `off` are compared as text (they take no `--json`).
+  After the slimming steps, after `shutdown`, and after `clone`/`erase` it also saves the contents of the
+  host-side `disabled.plist`, so persisted overrides are compared, not only the printed text. The
   scratch simulator and its clone are deleted on exit unless you pass `--keep-device`.
 - **`--watch`:** compares the sequence of `watch --json` event names for a simulator created and booted while
   `watch` runs.
@@ -49,13 +50,31 @@ Expected, and harmless to the macOS app; they appear in the report as diffs unle
 - Non-JSON error text for file and I/O errors differs (Foundation vs Go wording).
 - `simslim --json list` is accepted by Swift only; `watch extra-arg` is an error in Swift only.
 - Ctrl-C during `on`, `off` and `clone` does not run Go's cleanup in Swift.
-- `mutating/*.store` after `on` can transiently see a truncated, missing, or
-  validly-parseable-but-incomplete host-side `disabled.plist` (CoreSimulator/`launchd_sim`
-  rewrites that file asynchronously around boot; see the TODO in the README).
-  `snapstore()` requires two consecutive identical reads (up to ~4.5s) before trusting one.
-  There is no `mutating/07-on-noreboot.store` snapshot at all: `--no-reboot` never writes
-  the store directly, so the file can lag the real, confirmed-identical in-guest state
-  indefinitely, not just briefly.
+- `mutating/*.store` can transiently see a truncated, missing, or parseable-but-incomplete host-side
+  `disabled.plist`, because CoreSimulator's `launchd_sim` rewrites it asynchronously (see "Open question"
+  below). `snapstore()` trusts a read only after two identical ones in a row (up to ~4.5s), treats a file
+  absent for ~1.5s as really absent, and otherwise writes "store did not settle" to the step's stderr so the
+  comparison fails visibly.
 
 Anything else in `report.txt` is a real difference to investigate. When one is intentional, add it to this
 list; when it is a bug, fix the Swift side and re-run.
+
+## Open question: `disabled.plist` lags live changes
+
+Observed on the maintainer's Mac; not yet explained. The host-side
+`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<udid>/disabled.plist` is CoreSimulator's own
+undocumented bookkeeping. Both CLIs check the authoritative in-guest `launchctl print-disabled` state before
+reporting success, and that matched between Go and Swift in every trial.
+
+1. Right after `on` returns, the file can be mid-rewrite (truncated at a block boundary, or parseable but
+   missing entries) and settles within seconds. This showed up more often with the Swift CLI than with Go,
+   possibly only because Go's commands take slightly longer to return. Both tools write their own part of
+   the file atomically (temp file and `rename(2)`).
+2. After a live `enable`, `disable` or `on --no-reboot`, which never write the store directly, the file was
+   seen to stay stale for the Swift CLI well past any reasonable retry window, while an in-guest check showed
+   both tools had disabled the same labels. This is why the script snapshots the store after `shutdown`
+   instead of right after `on --no-reboot`. If the file still differs there, the Swift live path does not
+   persist what Go's does, which is worth investigating.
+
+Also open: whether anything else that reads this file right after a live call (the macOS app, `watch`'s
+pre-boot seeding) must tolerate the same staleness.

@@ -143,8 +143,12 @@ NET_PATTERN='URLSession|URLRequest|NSURLConnection|NWConnection|NWListener|NWPat
 # The one allowed URL is the plist DOCTYPE's public identifier: a fixed string
 # written into a file, never opened. Anything else with a scheme still fails.
 APPLE_DTD='http://www.apple.com/DTDs/PropertyList-1.0.dtd'
+# The other is the credit line `simslim help` prints, copied from the Go CLI: text
+# in Usage.swift that is written to stdout and never opened. Only that exact line
+# in that one file is exempt.
+HELP_CREDIT='Usage\.swift:[0-9]+:    https://github\.com/mobai-app/simslim · by MobAI \(https://mobai\.run\)$'
 net_hits="$(hits -rnE "$NET_PATTERN" "$SWIFT_DIR/Sources" "$GUI_DIR" --include='*.swift' \
-  | grep -vF "$APPLE_DTD" || true)"
+  | grep -vF "$APPLE_DTD" | grep -vE "$HELP_CREDIT" || true)"
 if [[ -n "$net_hits" ]]; then
   print -u2 -- "$net_hits"
   fail "network-capable API or URL found in source (above)"

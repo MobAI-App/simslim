@@ -6,15 +6,17 @@
 #   scripts/parity.sh                 read-only commands on the existing simulators
 #   scripts/parity.sh --mutating      also run on/off/enable/disable/clone/... on a
 #                                     scratch simulator this script creates and deletes
-#   scripts/parity.sh --watch         also compare `watch --json` events (slow, ~5 min)
+#   scripts/parity.sh --watch         also compare `watch --json` events (slow, ~5 min).
+#                                     UNLIKE the rest, `watch` slims EVERY shut-down
+#                                     simulator you own, so it asks first (or pass --yes)
 #
 # Options: --udid UDID (repeatable; default: up to 3 simulators plus booted ones)
 #          --runtime ID --devicetype ID (scratch simulator; default: newest iOS >= 18.5)
 #          --keep-device (leave the scratch simulator), --out DIR
 # Env:     GO_BIN / SWIFT_BIN use prebuilt binaries instead of building.
 #
-# The only simulators it changes are the scratch ones it creates itself. Read-only
-# runs never mutate anything. Exit status is 1 if any comparison differs.
+# Apart from --watch, the only simulators it changes are the scratch ones it creates
+# itself. Read-only runs never mutate anything. Exit status is 1 if any comparison differs.
 # Known, expected differences are listed in docs/parity-check.md.
 
 set -u
@@ -23,6 +25,7 @@ ROOT="$PWD"
 
 MUTATING=0
 WATCH=0
+YES=0
 KEEP=0
 UDIDS=()
 RUNTIME=""
@@ -33,11 +36,12 @@ while [ $# -gt 0 ]; do
     --mutating) MUTATING=1 ;;
     --watch) WATCH=1 ;;
     --keep-device) KEEP=1 ;;
+    --yes) YES=1 ;;
     --udid) UDIDS+=("$2"); shift ;;
     --runtime) RUNTIME="$2"; shift ;;
     --devicetype) DEVTYPE="$2"; shift ;;
     --out) OUT="$2"; shift ;;
-    -h | --help) sed -n 2,22p "$0"; exit 0 ;;
+    -h | --help) sed -n 2,20p "$0"; exit 0 ;;
     *) echo "parity: unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -175,8 +179,15 @@ DEV=""
 STORE_ROOT=/private/var/tmp
 is_udid() { [[ "$1" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]]; }
 EXTRA=()
+WATCH_PID=""
 cleanup() {
   local u
+  # A background `watch` keeps slimming every simulator, so never leave it running.
+  if [ -n "$WATCH_PID" ]; then
+    kill -INT "$WATCH_PID" 2>/dev/null
+    wait "$WATCH_PID" 2>/dev/null
+    WATCH_PID=""
+  fi
   if [ "$KEEP" = 0 ]; then
     for u in ${EXTRA[@]+"${EXTRA[@]}"} "$DEV"; do
       if [ -n "$u" ] && is_udid "$u"; then
@@ -186,6 +197,24 @@ cleanup() {
       fi
     done
   fi
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+# is_new_clone UDID BEFORE_JSON NAME: the UDID a CLI reports for a clone is deleted
+# afterwards, so only accept one that did not exist before and is the clone we named.
+is_new_clone() {
+  is_udid "$1" || return 1
+  grep -qiF "$1" <<<"$2" && return 1
+  xcrun simctl list devices -j | python3 -I -c '
+import json, sys
+udid, name = sys.argv[1].upper(), sys.argv[2]
+for devs in json.load(sys.stdin)["devices"].values():
+    for d in devs:
+        if d["udid"].upper() == udid:
+            sys.exit(0 if d["name"] == name else 1)
+sys.exit(1)' "$1" "$3"
 }
 
 pick_runtime_and_type() {
@@ -209,28 +238,33 @@ print(r["identifier"], want[1] or types[-1])' "$RUNTIME" "$DEVTYPE"
 }
 
 snapstore() { # snapstore TOOL NAME UDID : the host-side disabled.plist, as sorted disabled labels
-  local tool="$1" name="$2" u="$3" f json prev i
+  local tool="$1" name="$2" u="$3" f json last="" prev="" miss=0 settled=0 i note=""
   f="$STORE_ROOT/com.apple.CoreSimulator.SimDevice.$u/disabled.plist"
   mkdir -p "$OUT/$tool/mutating"
-  # launchd_sim owns this file and rewrites it asynchronously around boot and
-  # live disable/enable calls (an undocumented CoreSimulator detail; see
+  # launchd_sim owns this file and rewrites it asynchronously around boot and live
+  # disable/enable calls (an undocumented CoreSimulator detail; see
   # docs/parity-check.md), so a read right after a command returns can catch it
-  # mid-rewrite: not just briefly malformed, but validly parseable yet still
-  # incomplete. Require two consecutive identical reads before trusting one,
-  # rather than recording a false diff off whatever the first valid-looking
-  # read happened to catch.
+  # mid-rewrite: truncated, missing, or parseable yet incomplete. Trust a read only
+  # after two identical ones in a row. A file that stays absent for ~1.5s counts as
+  # genuinely absent. If neither happens in ~4.5s, say so in the step's stderr so
+  # the comparison fails loudly instead of recording a coin-flip as a result.
   json=""
-  prev=""
-  if [ -f "$f" ]; then
-    for i in $(seq 1 30); do
+  for i in $(seq 1 30); do
+    if [ -f "$f" ]; then
       json="$(plutil -convert json -o - "$f" 2>/dev/null)"
-      if [ -n "$json" ] && [ "$json" = "$prev" ]; then break; fi
-      prev="$json"
+      miss=0
+    else
       json=""
-      sleep 0.15
-    done
-    [ -z "$json" ] && json="$prev"
-  fi
+      miss=$((miss + 1))
+    fi
+    [ -n "$json" ] && last="$json"
+    if [ -n "$json" ] && [ "$json" = "$prev" ]; then settled=1; break; fi
+    if [ "$miss" -ge 10 ]; then settled=1; break; fi
+    prev="$json"
+    sleep 0.15
+  done
+  if [ "$settled" = 1 ] && [ "$miss" -ge 10 ]; then json=""; else json="$last"; fi
+  [ "$settled" = 1 ] || note="store did not settle within 30 reads"
   if [ -n "$json" ]; then printf '%s' "$json"; else echo '{}'; fi |
     python3 -I -c '
 import json, sys
@@ -238,10 +272,10 @@ d = json.load(sys.stdin)
 print(json.dumps({"disabled": sorted(k for k, v in d.items() if v is True),
                   "explicitly_enabled": sorted(k for k, v in d.items() if v is False)}, indent=1))' \
       >"$OUT/$tool/mutating/$name.store.raw.out"
-  : >"$OUT/$tool/mutating/$name.store.raw.err"
+  printf '%s' "$note" >"$OUT/$tool/mutating/$name.store.raw.err"
   echo 0 >"$OUT/$tool/mutating/$name.store.code"
   normalize "$OUT/$tool/mutating/$name.store.raw.out" >"$OUT/$tool/mutating/$name.store.out"
-  : >"$OUT/$tool/mutating/$name.store.err"
+  normalize "$OUT/$tool/mutating/$name.store.raw.err" >"$OUT/$tool/mutating/$name.store.err"
 }
 
 reset_device() {
@@ -251,7 +285,7 @@ reset_device() {
 }
 
 mutating_steps() { # mutating_steps TOOL
-  local tool="$1" d="$OUT/$1/mutating" bt="--boot-timeout 20m" clone
+  local tool="$1" d="$OUT/$1/mutating" bt="--boot-timeout 20m" clone before
   reset_device
   snapstore "$tool" 00-stock "$DEV"
   cap "$tool" "$d" 01-on exact $bt on "$DEV"
@@ -274,10 +308,9 @@ mutating_steps() { # mutating_steps TOOL
   cap "$tool" "$d" 06-off exact $bt off "$DEV"
   cap "$tool" "$d" 07-on-noreboot exact $bt on "$DEV" --no-reboot
   cap "$tool" "$d" 07-status exact status "$DEV" --json
-  # No store snapshot here: --no-reboot never writes the store directly, so the
-  # host-side disabled.plist depends entirely on launchd_sim's own best-effort,
-  # unboundedly-delayed bookkeeping of live launchctl calls. Direct in-guest
-  # comparison (confirmed equal for Go and Swift) is what actually matters.
+  # No store snapshot yet: after live launchctl calls the host-side disabled.plist
+  # can lag the guest's real state for a long time. It is snapshotted after the
+  # shutdown below, when launchd_sim has had to flush what it persists.
   cap "$tool" "$d" 08-enable exact enable "$DEV" icloud --json
   cap "$tool" "$d" 08-status exact status "$DEV" --dropped --json
   cap "$tool" "$d" 09-disable exact disable "$DEV" icloud --json
@@ -287,6 +320,7 @@ mutating_steps() { # mutating_steps TOOL
   cap "$tool" "$d" 11-doctor exact doctor "$DEV" --requires push,storekit,universal-links --json
   cap "$tool" "$d" 12-measure shape measure "$DEV" --json
   cap "$tool" "$d" 13-shutdown exact shutdown "$DEV" --json
+  snapstore "$tool" 13-shutdown "$DEV"
   cap "$tool" "$d" 13-disable-notbooted exact disable "$DEV" icloud --json
   cap "$tool" "$d" 14-size shape size "$DEV" --json
   cap "$tool" "$d" 14-disk-plan shape disk-plan "$DEV" --json
@@ -294,13 +328,16 @@ mutating_steps() { # mutating_steps TOOL
   # clone: the clone's UDID differs per run; both runs normalize it to <UDID1>.
   cap "$tool" "$d" 16-on-before-clone exact $bt on "$DEV"
   cap "$tool" "$d" 16-shutdown exact shutdown "$DEV" --json
+  before="$(xcrun simctl list devices -j)"
   cap "$tool" "$d" 17-clone exact $bt clone "$DEV" parity-clone --json
   clone="$(python3 -I -c 'import json,sys;print(json.load(sys.stdin).get("udid",""))' <"$d/17-clone.raw.out" 2>/dev/null)"
-  if is_udid "$clone"; then
+  if is_new_clone "$clone" "$before" parity-clone; then
     EXTRA+=("$clone")
     snapstore "$tool" 17-clone "$clone"
     cap "$tool" "$d" 18-repair-clone exact repair-clone "$DEV" "$clone" --json
     cap "$tool" "$d" 19-delete-clone exact delete "$clone" --json
+  elif [ -n "$clone" ]; then
+    echo "parity: refusing to track clone UDID '$clone' (not new, or not named parity-clone); nothing deleted" >&2
   fi
   cap "$tool" "$d" 20-erase exact erase "$DEV" --json
   snapstore "$tool" 20-erase "$DEV"
@@ -312,7 +349,6 @@ if [ "$MUTATING" = 1 ]; then
   [ -n "$DEVTYPE" ] || { echo "parity: no usable runtime" >&2; exit 2; }
   DEV="$(xcrun simctl create "simslim-parity-$$" "$DEVTYPE" "$RUNTIME")" || exit 2
   is_udid "$DEV" || { echo "parity: simctl create returned '$DEV'" >&2; exit 2; }
-  trap cleanup EXIT
   echo "scratch simulator: $DEV ($RUNTIME)"
   mutating_steps go
   mutating_steps swift
@@ -322,9 +358,10 @@ if [ "$MUTATING" = 1 ]; then
   done
   # Identical failures compare equal, so list the steps that failed in either tool:
   # a step that fails everywhere usually means the script, not the tools, is wrong.
-  echo "  non-zero exits (expected for the deliberate error steps 10-*, 13-disable-*):"
+  echo "  non-zero exits (informational; 10-disable-unmanaged and 13-disable-notbooted are deliberate errors):"
   for tool in go swift; do
     for f in "$OUT/$tool"/mutating/*.code; do
+      [ -e "$f" ] || continue
       [ "$(cat "$f")" != 0 ] && echo "    $tool $(basename "$f" .code): $(head -c 100 "${f%.code}.err" | tr '\n' ' ')"
     done
   done
@@ -338,6 +375,7 @@ watch_run() { # watch_run TOOL : kinds of events for a simulator created and boo
   : >"$log"
   "$(bin_of "$tool")" watch --json >"$log" 2>"$d/events.raw.err" </dev/null &
   pid=$!
+  WATCH_PID=$pid
   sleep 10
   w="$(xcrun simctl create "simslim-parity-watch-$$" "$DEVTYPE" "$RUNTIME")"
   is_udid "$w" || { kill -INT "$pid"; echo "parity: watch simulator create failed" >&2; return 1; }
@@ -352,6 +390,7 @@ watch_run() { # watch_run TOOL : kinds of events for a simulator created and boo
   sleep 10
   kill -INT "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
+  WATCH_PID=""
   echo 0 >"$d/events.code"
   DEV="$w" normalize "$log" --kinds >"$d/events.out"
   : >"$d/events.err"
@@ -362,9 +401,14 @@ if [ "$WATCH" = 1 ]; then
   echo "== watch --json events (slow)"
   if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then read -r RUNTIME DEVTYPE < <(pick_runtime_and_type); fi
   [ -n "$DEVTYPE" ] || { echo "parity: no usable runtime" >&2; exit 2; }
-  trap cleanup EXIT
   # watch slims every shut-down simulator on start; --set restricts nothing, so this
-  # touches every simulator you own. Only run it when that is acceptable.
+  # touches every simulator you own, not just the scratch ones.
+  if [ "$YES" != 1 ]; then
+    [ -t 0 ] || { echo "parity: --watch slims every shut-down simulator; pass --yes to allow it" >&2; exit 2; }
+    printf 'watch will slim EVERY shut-down simulator on this Mac (both CLIs). Type yes to continue: '
+    read -r answer
+    [ "$answer" = yes ] || { echo "parity: aborted" >&2; exit 2; }
+  fi
   watch_run go
   watch_run swift
   compare_one watch events

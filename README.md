@@ -13,9 +13,11 @@
 >
 > **Status.** Every command is ported and the `--json` contract is kept. Unit tests cover the safety
 > invariants, and [`scripts/parity.sh`](scripts/parity.sh) runs the same commands through both CLIs on real
-> simulators and diffs the output; the latest run (read-only plus `--mutating`) compared 91 commands with zero
-> differences. The Go sources stay in this repository as the reference, and the macOS app still bundles the
-> Go CLI until it is switched over.
+> simulators and diffs the output. A run on the maintainer's Mac (read-only, plus `--mutating` on a scratch
+> simulator) showed no differences on the paths it covers. That is not a proof of full parity: live
+> measurements are compared by shape, `--watch` is a separate opt-in run, and the known differences are listed
+> in [docs/parity-check.md](docs/parity-check.md). Run the script yourself to reproduce. The Go sources stay in
+> this repository as the reference, and the macOS app still bundles the Go CLI until it is switched over.
 >
 > **Upstream.** The Homebrew tap `mobai-app/tap` and `go install github.com/mobai-app/simslim` install
 > upstream's Go version, not this port. Report problems with the Swift port here and problems with the Go
@@ -556,29 +558,6 @@ Turning services off is fine for most development, UI automation, and CI, but so
 - The Contacts, Photos, and Calendar pickers can act up without their categories.
 
 `simslim profiles` lists every category, so you can keep a category with `--except` or individual daemons with `--keep`.
-
-## TODO
-
-- **`disabled.plist` lags the real state, on both tools, in two different ways.** The
-  host-side `disabled.plist` (`/private/var/tmp/com.apple.CoreSimulator.SimDevice.<udid>/`)
-  is CoreSimulator/`launchd_sim`'s own undocumented bookkeeping, not simslim's — both CLIs
-  only verify the authoritative, in-guest `launchctl print-disabled` state before declaring
-  success, and that matched between Go and Swift in every trial below. (1) Right after `on`
-  returns, the file can briefly be mid-rewrite — truncated at a filesystem block boundary,
-  or validly parseable but still missing entries — settling within a few seconds. Reproduced
-  with the Swift CLI much more often than Go across repeated trials, likely just because
-  Go's commands happen to take a little longer before returning (e.g. an extra
-  launchd-settling retry on the first in-guest readback) and so trips the race less, not
-  because of anything either tool does differently; both write their own part of the file
-  atomically (temp file + `rename(2)`). `scripts/parity.sh`'s `snapstore()` now requires two
-  consecutive identical reads (up to ~4.5s) before trusting one. (2) After a *live*
-  `enable`/`disable`/`on --no-reboot`, which never writes the store directly, the file can
-  lag **indefinitely** — confirmed with a direct in-guest check that Go and Swift end up
-  disabling the exact same labels, while the host file stayed stale for Swift well past any
-  reasonable retry window. `parity.sh` no longer snapshots the store after `on --no-reboot`
-  because of this. Worth digging into further: does anything else that reads this file
-  right after a live call (the GUI, `watch`'s pre-boot seeding) need to tolerate the same
-  staleness, bounded or not?
 
 ## Why
 
