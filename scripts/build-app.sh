@@ -24,8 +24,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-if ! command -v go >/dev/null 2>&1; then
-  echo "Go is required. Install it with: brew install go" >&2
+# Which CLI gets bundled: the Swift port (default, Xcode only) or the Go reference.
+# Not SIMSLIM_CLI: the app itself reads that at runtime to override the CLI path.
+CLI_IMPL="${SIMSLIM_CLI_IMPL:-swift}"
+case "$CLI_IMPL" in
+  swift | go) ;;
+  *)
+    echo "SIMSLIM_CLI_IMPL must be swift or go, got: $CLI_IMPL" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$CLI_IMPL" == "go" ]] && ! command -v go >/dev/null 2>&1; then
+  echo "Go is required for SIMSLIM_CLI_IMPL=go. Install it with: brew install go" >&2
   exit 1
 fi
 
@@ -44,7 +55,16 @@ case "$MACHINE_ARCH" in
 esac
 
 STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/simslim-app.XXXXXX")"
-trap 'rm -rf "$STAGING_DIR"' EXIT
+VERSION_SWIFT="$ROOT_DIR/swift/Sources/SimSlimKit/Version.swift"
+VERSION_BACKUP="$STAGING_DIR/Version.swift.orig"
+cleanup() {
+  # Put the stamped version file back, even when the build fails.
+  if [[ -f "$VERSION_BACKUP" ]]; then
+    cp "$VERSION_BACKUP" "$VERSION_SWIFT"
+  fi
+  rm -rf "$STAGING_DIR"
+}
+trap cleanup EXIT
 STAGED_APP="$STAGING_DIR/SimSlim.app"
 
 mkdir -p "$STAGED_APP/Contents/MacOS" "$STAGED_APP/Contents/Resources"
@@ -75,13 +95,35 @@ for variant in "${ICON_VARIANTS[@]}"; do
 done
 iconutil -c icns "$ICONSET_DIR" -o "$STAGED_APP/Contents/Resources/SimSlim.icns"
 
-echo "Building bundled simslim CLI ($MACHINE_ARCH)…"
-(
-  cd "$ROOT_DIR"
-  CGO_ENABLED=0 GOOS=darwin GOARCH="$GO_ARCH" \
-    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
-    -o "$STAGED_APP/Contents/Resources/simslim" ./cmd/simslim
-)
+echo "Building bundled simslim CLI ($CLI_IMPL, $MACHINE_ARCH)…"
+if [[ "$CLI_IMPL" == "go" ]]; then
+  (
+    cd "$ROOT_DIR"
+    CGO_ENABLED=0 GOOS=darwin GOARCH="$GO_ARCH" \
+      go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+      -o "$STAGED_APP/Contents/Resources/simslim" ./cmd/simslim
+  )
+else
+  case "$VERSION" in
+    *[!A-Za-z0-9._+-]*)
+      echo "VERSION contains characters that are not safe to stamp: $VERSION" >&2
+      exit 1
+      ;;
+  esac
+  cp "$VERSION_SWIFT" "$VERSION_BACKUP"
+  sed -i '' -E "s|^public let simslimVersion = \".*\"$|public let simslimVersion = \"$VERSION\"|" "$VERSION_SWIFT"
+  if ! grep -q "simslimVersion = \"$VERSION\"" "$VERSION_SWIFT"; then
+    echo "Could not stamp the version into $VERSION_SWIFT" >&2
+    exit 1
+  fi
+  swift build -c release --package-path "$ROOT_DIR/swift" --arch "$MACHINE_ARCH"
+  BIN_DIR="$(swift build -c release --package-path "$ROOT_DIR/swift" --arch "$MACHINE_ARCH" --show-bin-path)"
+  cp "$BIN_DIR/simslim" "$STAGED_APP/Contents/Resources/simslim"
+  cp "$VERSION_BACKUP" "$VERSION_SWIFT"
+  rm -f "$VERSION_BACKUP"
+  strip -x "$STAGED_APP/Contents/Resources/simslim" 2>/dev/null || true
+  codesign --force --sign - "$STAGED_APP/Contents/Resources/simslim" >/dev/null
+fi
 
 echo "Building SwiftUI app ($MACHINE_ARCH)…"
 xcrun swiftc \

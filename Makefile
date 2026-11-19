@@ -1,4 +1,4 @@
-.PHONY: app cli check format test swift-lint swift-test swift-gen swift-gen-check verify-deps
+.PHONY: app app-check cli check format test swift-lint swift-test swift-gen swift-gen-check verify-deps
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 
@@ -11,8 +11,12 @@ app:
 test:
 	go test ./...
 
+# Go reference implementation gate.
 check: test
 	go vet ./...
+
+# App sources and build script gate (no Go needed).
+app-check:
 	xcrun swift-format lint --strict --recursive gui
 	zsh -n scripts/build-app.sh
 	plutil -lint gui/Info.plist

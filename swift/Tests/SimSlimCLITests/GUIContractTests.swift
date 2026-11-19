@@ -66,6 +66,31 @@ final class GUIContractTests: XCTestCase {
     XCTAssertEqual(measurement.processes, 2)
     XCTAssertEqual(measurement.bytes, 30 * 1_048_576)
   }
+
+  func testBootAndShutdownDecodeAsTheAppsMutationResult() throws {
+    let boot = try decode(SimulatorMutationResult.self, ["boot", "--json", shutdownUDID])
+    XCTAssertEqual(boot.action, "boot")
+    XCTAssertEqual(boot.udid, shutdownUDID)
+
+    let down = try decode(SimulatorMutationResult.self, ["shutdown", "--json", bootedUDID])
+    XCTAssertEqual(down.action, "shutdown")
+    XCTAssertEqual(down.udid, bootedUDID)
+  }
+
+  /// The app reads stdout and stderr through one pipe, so anything on stderr
+  /// under --json would corrupt the JSON it decodes.
+  func testJSONCommandsTheAppCallsKeepStderrEmpty() {
+    let calls: [[String]] = [
+      ["list", "--json"], ["profiles", "--json"], ["measure", "--json", bootedUDID],
+      ["boot", "--json", shutdownUDID], ["shutdown", "--json", bootedUDID],
+      ["disk-categories", "--json"],
+    ]
+    for arguments in calls {
+      let result = runCLI(arguments, host: FakeHostFactory.standard.make())
+      XCTAssertEqual(result.status, 0, "\(arguments): \(result.stderr)")
+      XCTAssertEqual(result.stderr, "", "\(arguments) wrote to stderr under --json")
+    }
+  }
 }
 
 /// Builds a fresh standard host per call (FakeHost is stateful).
