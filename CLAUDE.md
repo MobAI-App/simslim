@@ -42,7 +42,8 @@ Go is and isn't available — never install Go just to make that check pass.
 go build ./cmd/simslim          # build the CLI
 go test ./...                   # run all tests (Makefile: make test)
 go test -run TestName ./...     # run a single test
-make check                      # full CI gate — must pass before a PR
+make check                      # Go gate (go test, go vet)
+make app-check                  # gui lint, build-app.sh syntax, Info.plist lint (no Go)
 make format                     # gofmt + swift-format (run before committing)
 make app                        # build build/SimSlim.app (Swift CLI + swiftc, macOS only; no Go)
 SIMSLIM_CLI_IMPL=go make app    # bundle the Go CLI instead (reference/fallback)

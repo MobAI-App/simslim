@@ -3,12 +3,14 @@
 ## Before you commit
 
 ```sh
-make format   # gofmt + swift-format
-make check    # go test, go vet, swift-format lint --strict, build-app.sh syntax, Info.plist lint
+make format       # gofmt + swift-format
+make check        # Go gate: go test, go vet (needs a Go toolchain)
+make app-check    # gui swift-format lint --strict, build-app.sh syntax, Info.plist lint (no Go)
+make swift-lint swift-test verify-deps   # Swift port gate (no Go)
 ```
 
-`make check` needs a Go toolchain. If one isn't available, or you only touched `swift/`, run the
-Swift-only checks instead — see
+CI runs all of these. `make check` needs a Go toolchain; the others do not. If Go isn't available, or you
+only touched `swift/` or `gui/`, run the Go-free checks instead — see
 [docs/parity-check.md#prerequisite-check-go-toolchain](docs/parity-check.md#prerequisite-check-go-toolchain)
 for the exact commands for each case. Never install Go just to satisfy a check; its absence is a valid
 environment.

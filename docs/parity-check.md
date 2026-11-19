@@ -31,7 +31,8 @@ environment, not a failure to fix.
 Run the full gate:
 
 ```sh
-make check          # go test, go vet, swift-format lint, build-app.sh syntax, Info.plist lint
+make check          # go test, go vet
+make app-check      # gui swift-format lint, build-app.sh syntax, Info.plist lint
 make swift-test      # swift test
 make swift-gen-check # Generated/ catalog still matches profiles.go/features.go/service_descriptions.go
 make verify-deps     # Swift port: system modules only, no network, no third-party libs
@@ -41,7 +42,7 @@ scripts/parity.sh    # Go-vs-Swift parity, read-only; add --mutating for a scrat
 ### Go unavailable
 
 Skip every Go-dependent step — `make check`, `make test`, and `scripts/parity.sh` all require the `go`
-binary and will fail outright (`parity.sh` exits 2 with "go not found (or set GO_BIN)"). Run only what
+binary (`make app` does not: it bundles the Swift CLI) and will fail outright (`parity.sh` exits 2 with "go not found (or set GO_BIN)"). Run only what
 doesn't need it:
 
 ```sh
