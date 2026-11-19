@@ -12,9 +12,10 @@
 > [`scripts/verify-deps.sh`](scripts/verify-deps.sh) checks that.
 >
 > **Status.** Every command is ported and the `--json` contract is kept. Unit tests cover the safety
-> invariants; side-by-side runs against the Go version on real simulators are still to be done, so treat the Go
-> version as the reference for now. The Go sources stay in this repository for that purpose, and the macOS app
-> still bundles the Go CLI.
+> invariants, and [`scripts/parity.sh`](scripts/parity.sh) runs the same commands through both CLIs on real
+> simulators and diffs the output; the latest run (read-only plus `--mutating`) compared 91 commands with zero
+> differences. The Go sources stay in this repository as the reference, and the macOS app still bundles the
+> Go CLI until it is switched over.
 >
 > **Upstream.** The Homebrew tap `mobai-app/tap` and `go install github.com/mobai-app/simslim` install
 > upstream's Go version, not this port. Report problems with the Swift port here and problems with the Go
@@ -443,8 +444,8 @@ behavior, safeguards, and Xcode 26.6 validation results.
 
 ## Use as a Go library
 
-This section describes upstream's Go package, which remains in this repository as the reference.
-The Swift port has no stable library API yet.
+> **Note.** This section describes upstream's Go package, which remains in this repository as the
+> reference. The Swift port has no stable library API yet.
 
 The repo root is an importable package with no external dependencies, so you can
 drive simulators from your own tooling instead of shelling out to the CLI:
