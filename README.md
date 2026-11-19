@@ -58,6 +58,29 @@ swift build -c release
 .build/release/simslim --version
 ```
 
+### Prebuilt binary
+
+Tagged releases attach `simslim-<tag>-macos-arm64.tar.gz` (Apple Silicon only) and its `.sha256`
+on the [Releases page](https://github.com/Akhrameev/simslim/releases). The binary is ad-hoc
+codesigned, **not** signed with an Apple Developer ID and **not notarized**. A file downloaded
+through a browser carries the quarantine flag, and Gatekeeper then refuses to run it. Either
+fetch it with `curl`, which does not set the flag:
+
+```sh
+curl -fsSLO https://github.com/Akhrameev/simslim/releases/download/<tag>/simslim-<tag>-macos-arm64.tar.gz
+tar -xzf simslim-<tag>-macos-arm64.tar.gz
+./simslim --version
+```
+
+or clear the flag after a browser download:
+
+```sh
+xattr -d com.apple.quarantine simslim
+```
+
+Verify the download against the `.sha256` file with `shasum -a 256 -c`. Building from source
+(above) avoids the issue entirely.
+
 Upstream's original Go build is installed separately, not by this repository:
 `brew install mobai-app/tap/simslim` or `go install github.com/mobai-app/simslim/cmd/simslim@latest`.
 
