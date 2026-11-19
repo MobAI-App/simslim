@@ -1,9 +1,14 @@
 # Go-vs-Swift parity check
 
-`scripts/parity.sh` runs the same commands through the Go CLI and the Swift CLI and diffs the normalized
-stdout, stderr and exit code. It is the plan's M7 step, run by hand on a Mac with Xcode, a simulator
-runtime, python3 and Go. Docker or Linux cannot run it: simslim needs macOS, `xcrun simctl` and real
-simulators.
+The Swift port reached parity and the Go tree was removed from this repository (see
+[docs/remove-go.md](docs/remove-go.md)); this script remains as a regression check against the last Go
+build, tagged `go-reference-final`.
+
+`scripts/parity.sh` runs the same commands through that Go build and the current Swift CLI and diffs the
+normalized stdout, stderr and exit code, run by hand on a Mac with Xcode, a simulator runtime, python3 and
+Go. Docker or Linux cannot run it: simslim needs macOS, `xcrun simctl` and real simulators. The Go side is
+built from a sibling worktree of the tag (`../simslim-go-reference`, created once and reused), not from
+this repository's working tree.
 
 ```sh
 git pull
@@ -17,7 +22,8 @@ raw and normalized output of each command. Exit status is 1 if anything differs.
 
 ## Prerequisite check: Go toolchain
 
-Determine availability without installing anything:
+The only thing in this repository that still wants a Go toolchain is `scripts/parity.sh`. Determine
+availability without installing anything:
 
 ```sh
 command -v go >/dev/null 2>&1 && echo "go: available" || echo "go: unavailable"
@@ -28,30 +34,26 @@ environment, not a failure to fix.
 
 ### Go available
 
-Run the full gate:
+Run the regular gate plus a parity pass:
 
 ```sh
-make check          # go test, go vet
 make app-check      # gui swift-format lint, build-app.sh syntax, Info.plist lint
+make swift-lint      # swift-format --strict over swift/Sources and swift/Tests
 make swift-test      # swift test
-make swift-gen-check # Generated/ catalog still matches profiles.go/features.go/service_descriptions.go
-make verify-deps     # Swift port: system modules only, no network, no third-party libs
+make verify-deps     # system modules only, no network, no third-party libs
 scripts/parity.sh    # Go-vs-Swift parity, read-only; add --mutating for a scratch-simulator run
 ```
 
 ### Go unavailable
 
-Skip every Go-dependent step — `make check`, `make test`, and `scripts/parity.sh` all require the `go`
-binary (`make app` does not: it bundles the Swift CLI) and will fail outright (`parity.sh` exits 2 with "go not found (or set GO_BIN)"). Run only what
-doesn't need it:
+`scripts/parity.sh` fails outright (exits 2 with "go not found (or set GO_BIN)"); everything else is
+Go-free, so just skip that one script:
 
 ```sh
-make swift-test      # swift test
-xcrun swift-format lint --strict --recursive swift/Sources swift/Tests
-make swift-gen-check  # parses profiles.go etc. as text with python3 — no go toolchain needed
-make verify-deps      # ./scripts/verify-deps.sh
-zsh -n scripts/build-app.sh
-plutil -lint gui/Info.plist
+make app-check
+make swift-lint
+make swift-test
+make verify-deps
 ```
 
 ## What it covers
@@ -94,6 +96,12 @@ Expected, and harmless to the macOS app; they appear in the report as diffs unle
   below). `snapstore()` trusts a read only after two identical ones in a row (up to ~4.5s), treats a file
   absent for ~1.5s as really absent, and otherwise writes "store did not settle" to the step's stderr so the
   comparison fails visibly.
+- `watch/events`: Go's run goes first and slims every shut-down simulator it finds on startup, including
+  any pre-existing ones, not just the scratch devices this script creates; Swift's run then sees those
+  already slim and correctly emits no `slimmed_before_boot` for them, since `preslimDevice` only reports a
+  non-zero delta. The two runs can disagree on how many `slimmed_before_boot` events there are purely from
+  this ordering, with no behavior difference between the tools. Confirmed by reading the host-side
+  `disabled.plist` directly: the label count matched the `services` field Go reported.
 
 Anything else in `report.txt` is a real difference to investigate. When one is intentional, add it to this
 list; when it is a bug, fix the Swift side and re-run.

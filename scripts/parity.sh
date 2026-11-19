@@ -3,6 +3,10 @@
 # runtime, python3 and Go. It builds both CLIs, runs the same commands through each,
 # and diffs the normalized stdout, stderr and exit code. Nothing is sent anywhere.
 #
+# The Go tree was removed from this repository; the Go side is built from the
+# go-reference-final tag (the last commit that still had it), checked out into a
+# sibling worktree at ../simslim-go-reference, created once and reused across runs.
+#
 #   scripts/parity.sh                 read-only commands on the existing simulators
 #   scripts/parity.sh --mutating      also run on/off/enable/disable/clone/... on a
 #                                     scratch simulator this script creates and deletes
@@ -41,7 +45,7 @@ while [ $# -gt 0 ]; do
     --runtime) RUNTIME="$2"; shift ;;
     --devicetype) DEVTYPE="$2"; shift ;;
     --out) OUT="$2"; shift ;;
-    -h | --help) sed -n 2,20p "$0"; exit 0 ;;
+    -h | --help) sed -n 2,23p "$0"; exit 0 ;;
     *) echo "parity: unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -55,8 +59,12 @@ NORM="$ROOT/scripts/parity-normalize.py"
 # --- binaries ---------------------------------------------------------------
 if [ -z "${GO_BIN:-}" ]; then
   command -v go >/dev/null || { echo "parity: go not found (or set GO_BIN)" >&2; exit 2; }
+  GO_WORKTREE="$ROOT/../simslim-go-reference"
+  if [ ! -d "$GO_WORKTREE" ]; then
+    git worktree add --detach "$GO_WORKTREE" go-reference-final >/dev/null || exit 2
+  fi
   GO_BIN="$OUT/simslim-go"
-  go build -o "$GO_BIN" ./cmd/simslim || exit 2
+  (cd "$GO_WORKTREE" && go build -o "$GO_BIN" ./cmd/simslim) || exit 2
 fi
 if [ -z "${SWIFT_BIN:-}" ]; then
   (cd swift && swift build -c release) >"$OUT/swift-build.log" 2>&1 || { cat "$OUT/swift-build.log"; exit 2; }

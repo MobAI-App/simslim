@@ -11,16 +11,16 @@
 > It has no Go toolchain, no third-party packages and no network access, and
 > [`scripts/verify-deps.sh`](scripts/verify-deps.sh) checks that.
 >
-> **Status.** Every command is ported and the `--json` contract is kept. Unit tests cover the safety
-> invariants, and [`scripts/parity.sh`](scripts/parity.sh) runs the same commands through both CLIs on real
-> simulators and diffs the output. A run on the maintainer's Mac (read-only, plus `--mutating` on a scratch
-> simulator) showed no differences on the paths it covers. That is not a proof of full parity: live
-> measurements are compared by shape, `--watch` is a separate opt-in run, and the known differences are listed
-> in [docs/parity-check.md](docs/parity-check.md). Run the script yourself to reproduce. The Go sources stay in
-> this repository as the reference, and the macOS app still bundles the Go CLI until it is switched over.
+> **Status.** The port is complete: every command, the `--json` contract, and the safety invariants carry
+> over, the macOS app bundles the Swift CLI, and the Go tree has been removed from this repository (see
+> [docs/remove-go.md](docs/remove-go.md)). [`scripts/parity.sh`](scripts/parity.sh) remains as a
+> regression check against the last Go build, tagged `go-reference-final`: it runs the same commands
+> through both CLIs on real simulators and diffs the output. A full run (read-only, `--mutating` on a
+> scratch simulator, and `--watch`) showed no behavioral differences; the known, deliberate ones are listed
+> in [docs/parity-check.md](docs/parity-check.md).
 >
 > **Upstream.** The Homebrew tap `mobai-app/tap` and `go install github.com/mobai-app/simslim` install
-> upstream's Go version, not this port. Report problems with the Swift port here and problems with the Go
+> upstream's Go version, not this port. Report problems with this Swift build here and problems with the Go
 > version upstream.
 
 Run a lot more iOS, Apple TV (tvOS), Apple Watch (watchOS), and Apple Vision Pro (visionOS) simulators on one Mac by turning off the background daemons a simulator doesn't need.
@@ -51,30 +51,21 @@ shared mappings once for every process that maps them.
 
 ## Install
 
-### This port (Swift, Xcode only)
-
 ```sh
 git clone https://github.com/Akhrameev/simslim && cd simslim/swift
 swift build -c release
 .build/release/simslim --version
 ```
 
-### Upstream Go version (MobAI)
+Upstream's original Go build is installed separately, not by this repository:
+`brew install mobai-app/tap/simslim` or `go install github.com/mobai-app/simslim/cmd/simslim@latest`.
 
-These install MobAI's original build, not this port:
-
-```sh
-brew install mobai-app/tap/simslim
-go install github.com/mobai-app/simslim/cmd/simslim@latest
-```
-
-### About the Swift port
+### About this build
 
 It covers every command: `list`, `profiles`, `status`, `verify`, `doctor`,
 `measure`, `on`, `off`, `boot`, `shutdown`, `enable`, `disable`, `watch`,
 `rename`, `erase`, `delete`, `top`, `size`, `profile`, `clone`, `repair-clone`,
-and the `disk-*` commands. The macOS app still bundles the Go CLI until it is
-switched over. `scripts/verify-deps.sh` checks that the Swift code imports only
+and the `disk-*` commands. `scripts/verify-deps.sh` checks that the Swift code imports only
 Apple system modules, uses no network API, and links
 only system libraries.
 
@@ -444,59 +435,15 @@ Documents, app data, and user media. Those durable rows are never eligible for
 cleanup. See the [disk cleanup safety model](docs/disk-cleanup.md) for recovery
 behavior, safeguards, and Xcode 26.6 validation results.
 
-## Use as a Go library
+## Use as a library
 
-> **Note.** This section describes upstream's Go package, which remains in this repository as the
-> reference. The Swift port has no stable library API yet.
+`SimSlimKit` (`swift/Sources/SimSlimKit`) is the importable library behind the CLI, with no external
+dependencies, so you can drive simulators from your own Swift tooling instead of shelling out to the CLI —
+see [CLAUDE.md](CLAUDE.md#architecture) for its shape. It has no stable, versioned API yet; add it as a
+local Swift package dependency on this checkout if you want to use it today.
 
-The repo root is an importable package with no external dependencies, so you can
-drive simulators from your own tooling instead of shelling out to the CLI:
-
-```sh
-go get github.com/mobai-app/simslim
-```
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/mobai-app/simslim"
-)
-
-func main() {
-	ctx := context.Background()
-
-	devices, err := simslim.ListDevices(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// Slim every booted simulator, keeping Siri and search enabled.
-	profile, err := simslim.BuildProfile("", "siri,search", "")
-	if err != nil {
-		panic(err)
-	}
-	for _, d := range devices {
-		if d.State != "Booted" {
-			continue
-		}
-		changed, err := simslim.EnableSlim(ctx, d.Set, d.UDID, profile, func(msg string) {
-			fmt.Println(d.UDID, msg)
-		})
-		fmt.Println(d.UDID, "changed:", changed, "err:", err)
-	}
-}
-```
-
-The package never writes to stdout — it returns values and reports progress
-through the `simslim.Reporter` callback you pass in. `simslim.Categories`,
-`simslim.Features`, and `simslim.SlimmableSet()` expose the same allowlist the
-CLI uses; `simslim.EnableServices`, `simslim.DisableServices`, and
-`simslim.SaveServices` back `enable`, `disable`, and `--save`. macOS only,
-since everything runs through `xcrun simctl`.
+Upstream's original Go package (`go get github.com/mobai-app/simslim`) offers the same capability for the
+Go build; see [its repository](https://github.com/mobai-app/simslim) for that API.
 
 ## How it works
 

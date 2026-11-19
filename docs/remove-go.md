@@ -1,7 +1,13 @@
 # Removing the Go stack
 
-The macOS app and the release already use the Swift CLI alone (`make app` needs no Go; `release.yml`
-ships only the Swift tarball). The Go tree is kept for two jobs only:
+**Status: done.** The Go tree was removed, tagged `go-reference-final` first. `scripts/parity.sh` was kept
+(per the choice below) and now builds its Go binary from a sibling worktree of that tag instead of
+`./cmd/simslim`; `swift/Tools/gen_catalog.py` was deleted, since it had nothing left to read, and the
+`Generated/` files it produced are now ordinary hand-maintained source. This page is kept as the record of
+how, and as a reference if the Go tree ever needs resurrecting.
+
+The macOS app and the release already used the Swift CLI alone (`make app` needed no Go; `release.yml`
+shipped only the Swift tarball) before Go was removed. The Go tree had been kept for two jobs only:
 
 1. **Parity reference:** `scripts/parity.sh` builds the Go CLI and diffs it against the Swift one.
 2. **Catalog source:** `swift/Tools/gen_catalog.py` reads `profiles.go`, `service_descriptions.go`,
