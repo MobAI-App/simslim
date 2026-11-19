@@ -114,7 +114,7 @@ The SwiftUI app bundles the CLI and adds:
 - Read-only disk analysis plus confirmed cleanup of allowlisted data.
 - Clone, rename, erase, delete, and Finder shortcuts.
 
-Build it locally with Go and Xcode:
+Build it locally with Xcode alone (the app bundles the Swift CLI; no Go needed):
 
 ```sh
 make app

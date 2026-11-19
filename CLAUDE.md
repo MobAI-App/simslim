@@ -44,13 +44,14 @@ go test ./...                   # run all tests (Makefile: make test)
 go test -run TestName ./...     # run a single test
 make check                      # full CI gate — must pass before a PR
 make format                     # gofmt + swift-format (run before committing)
-make app                        # build build/SimSlim.app (Go + swiftc, macOS only)
+make app                        # build build/SimSlim.app (Swift CLI + swiftc, macOS only; no Go)
+SIMSLIM_CLI_IMPL=go make app    # bundle the Go CLI instead (reference/fallback)
 open build/SimSlim.app
 ```
 
-`make check` runs `go test`, `go vet`, `swift-format lint --strict --recursive gui`,
-`zsh -n scripts/build-app.sh`, and `plutil -lint gui/Info.plist`. CI (`.github/workflows/ci.yml`)
-runs exactly this on macos-26 / Xcode 26.6, then builds and verifies the app bundle.
+`make check` is the Go gate (`go test`, `go vet`); `make app-check` runs
+`swift-format lint --strict --recursive gui`, `zsh -n scripts/build-app.sh`, and `plutil -lint gui/Info.plist`. CI (`.github/workflows/ci.yml`)
+runs the Swift job (lint, tests, deps audit, `app-check`, app build and bundle verification) and a separate Go reference job on macos-26 / Xcode 26.6.
 
 Tests are pure unit tests (parsing, delta logic, allowlist invariants) — they do
 **not** boot real simulators, so they run anywhere. Only the app build and manual
@@ -191,7 +192,7 @@ invokes the bundled CLI with `--json` and decodes these types; there is no
 other IPC.
 
 **The SwiftUI app** (`gui/`) has no Xcode project. `scripts/build-app.sh` compiles
-the Swift sources directly with `swiftc`, cross-builds the Go CLI, bundles it into
+the Swift sources directly with `swiftc`, builds the Swift CLI with `swift build` (stamping the version; `SIMSLIM_CLI_IMPL=go` bundles the Go CLI instead), bundles it into
 `SimSlim.app/Contents/Resources/simslim`, generates the icon, and ad-hoc codesigns.
 The app is a thin front end that shells out to that bundled binary.
 

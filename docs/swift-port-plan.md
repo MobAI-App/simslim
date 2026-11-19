@@ -1,6 +1,6 @@
 # simslim Swift port: plan
 
-Status: M1 to M6 are implemented: every Go command is ported with the `--json` contract kept. M7 (side-by-side parity runs on real simulators) and M8 (switch the app build to the Swift CLI) are still open.
+Status: M1 to M6 are implemented: every Go command is ported with the `--json` contract kept. M7 (side-by-side parity runs on real simulators) is under way, and M8 is done: `make app` bundles the Swift CLI (`SIMSLIM_CLI_IMPL=go` keeps the Go build as a fallback). Deleting the Go tree is a separate, later step.
 Branch: `swift-port` (no upstream). Go code stays untouched as the reference until the port reaches parity.
 
 ## 1. Goal and non-goals
