@@ -24,7 +24,7 @@ make verify-deps      # system modules only, no network symbols, no third-party 
 make app-check        # gui swift-format lint, build-app.sh syntax, Info.plist lint
 make app              # build build/SimSlim.app (swiftc + swift build, macOS only; no Go)
 open build/SimSlim.app
-make format           # swift-format over gui (run before committing)
+make format           # swift-format over gui/ and swift/ (run before committing)
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, tests, the dependency audit, `app-check`, and the app build and

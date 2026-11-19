@@ -3,7 +3,7 @@
 ## Before you commit
 
 ```sh
-make format       # swift-format over gui (rewrites files)
+make format       # swift-format over gui/ and swift/ (rewrites files)
 make app-check     # gui swift-format lint --strict, build-app.sh syntax, Info.plist lint
 make swift-lint swift-test verify-deps
 ```

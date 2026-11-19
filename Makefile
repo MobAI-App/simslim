@@ -10,7 +10,7 @@ app-check:
 	plutil -lint gui/Info.plist
 
 format:
-	xcrun swift-format format --in-place --recursive gui
+	xcrun swift-format format --in-place --recursive gui swift/Sources swift/Tests
 
 swift-lint:
 	xcrun swift-format lint --strict --recursive swift/Sources swift/Tests
