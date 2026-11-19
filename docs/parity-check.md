@@ -15,6 +15,44 @@ scripts/parity.sh --mutating --watch   # + watch --json events (slow, and slims 
 Results go to `build/parity/<timestamp>/`: `report.txt` holds every diff, and `go/` and `swift/` hold the
 raw and normalized output of each command. Exit status is 1 if anything differs.
 
+## Prerequisite check: Go toolchain
+
+Determine availability without installing anything:
+
+```sh
+command -v go >/dev/null 2>&1 && echo "go: available" || echo "go: unavailable"
+```
+
+Never install Go (via Homebrew, `asdf`, or otherwise) to satisfy this check — its absence is a valid
+environment, not a failure to fix.
+
+### Go available
+
+Run the full gate:
+
+```sh
+make check          # go test, go vet, swift-format lint, build-app.sh syntax, Info.plist lint
+make swift-test      # swift test
+make swift-gen-check # Generated/ catalog still matches profiles.go/features.go/service_descriptions.go
+make verify-deps     # Swift port: system modules only, no network, no third-party libs
+scripts/parity.sh    # Go-vs-Swift parity, read-only; add --mutating for a scratch-simulator run
+```
+
+### Go unavailable
+
+Skip every Go-dependent step — `make check`, `make test`, and `scripts/parity.sh` all require the `go`
+binary and will fail outright (`parity.sh` exits 2 with "go not found (or set GO_BIN)"). Run only what
+doesn't need it:
+
+```sh
+make swift-test      # swift test
+xcrun swift-format lint --strict --recursive swift/Sources swift/Tests
+make swift-gen-check  # parses profiles.go etc. as text with python3 — no go toolchain needed
+make verify-deps      # ./scripts/verify-deps.sh
+zsh -n scripts/build-app.sh
+plutil -lint gui/Info.plist
+```
+
 ## What it covers
 
 - **Static:** `help`, `version`, `profiles` (every category), `doctor --list`, `disk-categories`, `list`,

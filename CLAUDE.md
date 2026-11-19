@@ -24,6 +24,10 @@ make swift-gen-check  # Generated/ catalog files still match the Go source (pyth
 make verify-deps      # system modules only, no network symbols, no third-party libs
 ```
 
+Go-vs-Swift parity checks (`scripts/parity.sh`) need a Go toolchain; see
+[docs/parity-check.md](docs/parity-check.md#prerequisite-check-go-toolchain) for which checks to run when
+Go is and isn't available — never install Go just to make that check pass.
+
 - After changing `profiles.go`, `service_descriptions.go`, `features.go` or `profiles_test.go`, run
   `make swift-gen`; never edit `swift/**/Generated/` by hand.
 - The same safety invariants and `--json` contract apply; a change to one implementation needs the other
